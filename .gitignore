@@ -1,0 +1,50 @@
+# Python / Flask
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+
+# Databases & SQLite WAL (runtime files, not source)
+instance/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / React Client
+client/node_modules/
+client/dist/
+client/.vite/
+.npm
+*.log
+
+# Environment & IDE
+.env
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# NOTE: model/*.pkl files are intentionally committed so Render can use them.
+# They are large (~250 MB) but required for the ML service to function.

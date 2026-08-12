@@ -1,0 +1,98 @@
+{
+  "best_model": "Linear SVM",
+  "best_accuracy": 0.9999,
+  "categories": [
+    "Immediate Reply",
+    "Spam",
+    "Important",
+    "Promotions",
+    "Banking",
+    "Jobs",
+    "Examinations",
+    "Purchases",
+    "Social",
+    "Personal",
+    "Updates",
+    "Office",
+    "Customer Support",
+    "Bookings",
+    "Travel",
+    "Healthcare",
+    "Newsletters",
+    "Others"
+  ],
+  "metrics": {
+    "Complement Naive Bayes": {
+      "accuracy": 0.9998,
+      "precision": 0.9998,
+      "recall": 0.9998,
+      "f1_score": 0.9998
+    },
+    "Multinomial Naive Bayes": {
+      "accuracy": 0.9999,
+      "precision": 0.9999,
+      "recall": 0.9999,
+      "f1_score": 0.9999
+    },
+    "Logistic Regression": {
+      "accuracy": 0.9999,
+      "precision": 0.9999,
+      "recall": 0.9999,
+      "f1_score": 0.9999
+    },
+    "Linear SVM": {
+      "accuracy": 0.9999,
+      "precision": 0.9999,
+      "recall": 0.9999,
+      "f1_score": 0.9999
+    },
+    "SGD Classifier": {
+      "accuracy": 0.9999,
+      "precision": 0.9999,
+      "recall": 0.9999,
+      "f1_score": 0.9999
+    },
+    "Ensemble (Soft Voting)": {
+      "accuracy": 0.9999,
+      "precision": 0.9999,
+      "recall": 0.9999,
+      "f1_score": 0.9999
+    }
+  },
+  "dataset_size": 99106,
+  "train_size": 84240,
+  "test_size": 14866,
+  "feature_dims": {
+    "word_ngram_features": 60000,
+    "char_ngram_features": 30000,
+    "total_combined": 90000
+  },
+  "models_trained": [
+    "Complement Naive Bayes",
+    "Multinomial Naive Bayes",
+    "Logistic Regression",
+    "Linear SVM",
+    "SGD Classifier"
+  ],
+  "ovr_categories": [
+    "Immediate Reply",
+    "Spam",
+    "Important",
+    "Promotions",
+    "Banking",
+    "Jobs",
+    "Examinations",
+    "Purchases",
+    "Social",
+    "Personal",
+    "Updates",
+    "Office",
+    "Customer Support",
+    "Bookings",
+    "Travel",
+    "Healthcare",
+    "Newsletters",
+    "Others"
+  ],
+  "samples_per_cat": 5500
+}

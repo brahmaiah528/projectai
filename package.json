@@ -1,0 +1,24 @@
+{
+  "name": "automated-email-classification-system",
+  "version": "1.0.0",
+  "description": "Automated Content Categorization Improves Email Classification Accuracy and Organization Compared to Traditional Email Classification",
+  "main": "server/app.py",
+  "scripts": {
+    "start": "python server/app.py",
+    "train": "python model/train_model.py",
+    "client:install": "cd client && npm install",
+    "client:start": "cd client && npm run dev",
+    "client:build": "cd client && npm run build"
+  },
+  "keywords": [
+    "email-classification",
+    "machine-learning",
+    "scikit-learn",
+    "tf-idf",
+    "flask",
+    "react",
+    "gmail-api"
+  ],
+  "author": "Google Deepmind Antigravity Pair Programmer",
+  "license": "MIT"
+}
