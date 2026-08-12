@@ -33,16 +33,14 @@ export default function LoginPage() {
     setError('');
     setIsGoogleLoading(true);
     try {
+      // googleLogin() does a full-page redirect — the page navigates away.
+      // This try block will never finish normally; only errors reach catch.
       await googleLogin();
-      navigate('/dashboard');
     } catch (err) {
-      // Ignore "popup closed" error — user cancelled
-      if (!err.message.includes('closed')) {
-        setError(err.message || 'Google sign-in failed. Please try again.');
-      }
-    } finally {
+      setError(err.message || 'Google sign-in failed. Please try again.');
       setIsGoogleLoading(false);
     }
+    // Note: no finally — we want the spinner to stay on while redirecting
   };
 
   const handleQuickLogin = (demoEmail, demoPass) => {

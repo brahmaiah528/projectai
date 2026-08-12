@@ -40,74 +40,30 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const googleLogin = () => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const res = await API.get('/auth/google/login-url');
-        if (!res.data.available || !res.data.auth_url) {
-          reject(new Error(res.data.message || 'Google Sign-In not configured.'));
-          return;
-        }
-        const popup = window.open(res.data.auth_url, 'GoogleLogin', 'width=600,height=700,top=100,left=300');
-        let isHandled = false;
-
-        const handler = (event) => {
-          // Accept messages from same origin (popup redirects to /auth/callback on same domain)
-          // Also accept wildcard for legacy postMessage support
-          const isSameOrigin = event.origin === window.location.origin;
-          const isLegacyWildcard = event.origin !== 'null'; // allow most origins, block sandboxed iframes
-          if (!isSameOrigin && !isLegacyWildcard) return;
-
-          if (event.data && (event.data.type === 'GOOGLE_LOGIN_SUCCESS' || event.data.type === 'GMAIL_CONNECTED' || event.data.token)) {
-            const { token: jwtToken, user: userData, error } = event.data;
-            if (error) { 
-              isHandled = true;
-              window.removeEventListener('message', handler);
-              reject(new Error(error)); 
-              return; 
-            }
-            if (jwtToken && userData) {
-              isHandled = true;
-              window.removeEventListener('message', handler);
-              setToken(jwtToken);
-              setUser(userData);
-              localStorage.setItem('token', jwtToken);
-              localStorage.setItem('user', JSON.stringify(userData));
-              resolve(userData);
-            }
-          }
-        };
-
-        window.addEventListener('message', handler);
-
-        // Cleanup if popup closed
-        const timer = setInterval(() => {
-          if (popup && popup.closed) {
-            clearInterval(timer);
-            window.removeEventListener('message', handler);
-            if (!isHandled) {
-              // Check if OAuth stored a fresh token in google_oauth_token key
-              const googleToken = localStorage.getItem('google_oauth_token');
-              const googleUser = localStorage.getItem('google_oauth_user');
-              if (googleToken && googleUser) {
-                const parsedUser = JSON.parse(googleUser);
-                localStorage.setItem('token', googleToken);
-                localStorage.setItem('user', googleUser);
-                localStorage.removeItem('google_oauth_token');
-                localStorage.removeItem('google_oauth_user');
-                setToken(googleToken);
-                setUser(parsedUser);
-                resolve(parsedUser);
-              } else {
-                reject(new Error('Sign-in popup was closed.'));
-              }
-            }
-          }
-        }, 500);
-      } catch (err) {
-        reject(err);
-      }
-    });
+  /**
+   * googleLogin — full-page redirect (most reliable cross-origin approach).
+   * 
+   * Flow:
+   *  1. Fetch the Google auth URL from the backend
+   *  2. Store the current page in sessionStorage so we know where to redirect back
+   *  3. Navigate the entire browser window to Google's OAuth page
+   *  4. Google → Render backend → HTTP 302 → /auth/callback#token=...
+   *  5. AuthCallbackPage reads token from URL fragment, stores it, navigates to /dashboard
+   * 
+   * No popup, no postMessage, no cross-origin issues.
+   */
+  const googleLogin = async () => {
+    const res = await API.get('/auth/google/login-url');
+    if (!res.data.available || !res.data.auth_url) {
+      throw new Error(res.data.message || 'Google Sign-In not configured on this server.');
+    }
+    // Mark that a Google login is in progress (AuthCallbackPage checks this)
+    sessionStorage.setItem('google_login_pending', '1');
+    // Full page redirect — browser navigates away, comes back to /auth/callback
+    window.location.href = res.data.auth_url;
+    // The function never returns after this line (page navigates away)
+    // Return a promise that never resolves so callers don't see errors
+    return new Promise(() => {});
   };
 
   const register = async (name, email, password) => {
