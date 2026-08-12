@@ -126,6 +126,13 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
+  const setTokenAndUser = (jwtToken, userData) => {
+    setToken(jwtToken);
+    setUser(userData);
+    localStorage.setItem('token', jwtToken);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -138,6 +145,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateProfile,
+        setTokenAndUser,
       }}
     >
       {children}

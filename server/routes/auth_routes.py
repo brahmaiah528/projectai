@@ -216,41 +216,52 @@ def google_callback():
             error_msg = str(e)
             print(f"[Google OAuth Error] {error_msg}")
 
-    token_js = json.dumps(jwt_token or '')
-    user_js = json.dumps(user_data or {})
-    error_js = json.dumps(error_msg or '')
-    status_text = '✓ Google Sign-in Complete!' if jwt_token else f'✗ {error_msg or "OAuth failed"}'
-    color = '#10b981' if jwt_token else '#ef4444'
+    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
 
-    return f"""<!DOCTYPE html><html><head><title>Google OAuth Complete</title></head>
-    <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-      <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-        <h2 style="color:{color};margin-bottom:8px;">{status_text}</h2>
-        <p style="color:#94a3b8;font-size:13px;">Opening dashboard...</p>
-        <script>
-          const token = {token_js};
-          const user = {user_js};
-          const err = {error_js};
-          // Always write to localStorage FIRST so fallback polling works
-          if (token && user && user.id) {{
-            localStorage.setItem('google_oauth_token', token);
-            localStorage.setItem('google_oauth_user', JSON.stringify(user));
-          }}
-          if (window.opener) {{
-            window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: err }}, '*');
-            setTimeout(() => window.close(), 200);
-          }} else {{
-            // No opener: direct navigation (e.g. mobile or popup blocked)
-            if (token) {{
-              localStorage.setItem('token', token);
-              localStorage.setItem('user', JSON.stringify(user));
+    if jwt_token and user_data:
+        import urllib.parse
+        token_js = json.dumps(jwt_token)
+        user_js = json.dumps(user_data or {})
+        # Use URL fragment redirect — fragment is never sent to server, safe for tokens
+        # The frontend /auth/callback route reads the hash and stores the token
+        fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
+        redirect_url = f"{frontend_url}/auth/callback#{fragment}"
+        return f"""<!DOCTYPE html><html><head><title>Signing in...</title></head>
+        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
+            <h2 style="color:#10b981;margin-bottom:8px;">✓ Google Sign-in Complete!</h2>
+            <p style="color:#94a3b8;font-size:13px;">Redirecting to dashboard...</p>
+          </div>
+          <script>
+            const token = {token_js};
+            const user = {user_js};
+            if (window.opener && !window.opener.closed) {{
+              try {{
+                window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: null }}, '*');
+                setTimeout(() => window.close(), 300);
+              }} catch(e) {{
+                window.location.href = {json.dumps(redirect_url)};
+              }}
+            }} else {{
+              window.location.href = {json.dumps(redirect_url)};
             }}
-            const frontendUrl = ${json.dumps(current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app'))};
-            window.location.href = frontendUrl + '/dashboard';
-          }}
-        </script>
-      </div>
-    </body></html>""", 200
+          </script>
+        </body></html>""", 200
+    else:
+        err_msg = error_msg or 'OAuth failed'
+        return f"""<!DOCTYPE html><html><head><title>Sign-in Failed</title></head>
+        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
+            <h2 style="color:#ef4444;margin-bottom:8px;">✗ {err_msg}</h2>
+            <p style="color:#94a3b8;font-size:13px;"><a href="{frontend_url}/login" style="color:#60a5fa;">Return to login</a></p>
+          </div>
+          <script>
+            if (window.opener && !window.opener.closed) {{
+              try {{ window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token: null, user: null, error: {json.dumps(err_msg)} }}, '*'); }} catch(e) {{}}
+              setTimeout(() => window.close(), 2000);
+            }}
+          </script>
+        </body></html>""", 200
 
 # ─── Google Sign-In: Any Gmail user can log in / register ─────────────────────
 
@@ -337,29 +348,48 @@ def google_login_callback():
             error_msg = str(e)
             print(f"[Google Login Error] {error_msg}")
 
-    token_js = json.dumps(jwt_token or '')
-    user_js = json.dumps(user_data or {})
-    error_js = json.dumps(error_msg or '')
-    status_text = '✓ Signed in! Redirecting...' if jwt_token else f'✗ {error_msg or "Sign-in failed"}'
-    color = '#10b981' if jwt_token else '#ef4444'
+    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
 
-    return f"""<!DOCTYPE html><html><head><title>Google Sign-In</title></head>
-    <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-      <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-        <h2 style="color:{color};margin-bottom:8px;">{status_text}</h2>
-        <p style="color:#94a3b8;font-size:13px;">Opening dashboard...</p>
-      </div>
-      <script>
-        const token = {token_js};
-        const user = {user_js};
-        const err = {error_js};
-        if (window.opener) {{
-          window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: err }}, '*');
-          window.opener.postMessage({{ type: 'GMAIL_CONNECTED', token, user, error: err }}, '*');
-          setTimeout(() => window.close(), 200);
-        }} else {{
-          const frontendUrl = ${json.dumps(current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app'))};
-          window.location.href = frontendUrl + '/dashboard';
-        }}
-      </script>
-    </body></html>""", 200
+    if jwt_token and user_data:
+        import urllib.parse
+        token_js = json.dumps(jwt_token)
+        user_js = json.dumps(user_data or {})
+        fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
+        redirect_url = f"{frontend_url}/auth/callback#{fragment}"
+        return f"""<!DOCTYPE html><html><head><title>Signing in...</title></head>
+        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
+            <h2 style="color:#10b981;margin-bottom:8px;">✓ Signed in!</h2>
+            <p style="color:#94a3b8;font-size:13px;">Redirecting to dashboard...</p>
+          </div>
+          <script>
+            const token = {token_js};
+            const user = {user_js};
+            if (window.opener && !window.opener.closed) {{
+              try {{
+                window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: null }}, '*');
+                window.opener.postMessage({{ type: 'GMAIL_CONNECTED', token, user, error: null }}, '*');
+                setTimeout(() => window.close(), 300);
+              }} catch(e) {{
+                window.location.href = {json.dumps(redirect_url)};
+              }}
+            }} else {{
+              window.location.href = {json.dumps(redirect_url)};
+            }}
+          </script>
+        </body></html>""", 200
+    else:
+        err_msg = error_msg or 'Sign-in failed'
+        return f"""<!DOCTYPE html><html><head><title>Sign-in Failed</title></head>
+        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
+            <h2 style="color:#ef4444;margin-bottom:8px;">✗ {err_msg}</h2>
+            <p style="color:#94a3b8;font-size:13px;"><a href="{frontend_url}/login" style="color:#60a5fa;">Return to login</a></p>
+          </div>
+          <script>
+            if (window.opener && !window.opener.closed) {{
+              try {{ window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token: null, user: null, error: {json.dumps(err_msg)} }}, '*'); }} catch(e) {{}}
+              setTimeout(() => window.close(), 2000);
+            }}
+          </script>
+        </body></html>""", 200
