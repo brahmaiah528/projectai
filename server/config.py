@@ -33,9 +33,26 @@ class Config:
     
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
-    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://projectai1.vercel.app')
-    GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'https://ai-email-classification.onrender.com/api/auth/google/callback')
-    GOOGLE_LOGIN_REDIRECT_URI = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', 'https://ai-email-classification.onrender.com/api/auth/google/login-callback')
+    
+    _render_url = os.getenv('RENDER_EXTERNAL_URL', 'https://ai-email-classification.onrender.com').rstrip('/')
+    
+    _frontend_env = os.getenv('FRONTEND_URL', '').rstrip('/')
+    if not _frontend_env or 'localhost' in _frontend_env:
+        FRONTEND_URL = 'https://projectai1.vercel.app'
+    else:
+        FRONTEND_URL = _frontend_env
+
+    _g_redir = os.getenv('GOOGLE_REDIRECT_URI', '').rstrip('/')
+    if not _g_redir or 'localhost' in _g_redir:
+        GOOGLE_REDIRECT_URI = f"{_render_url}/api/auth/google/callback"
+    else:
+        GOOGLE_REDIRECT_URI = _g_redir
+
+    _g_login_redir = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', '').rstrip('/')
+    if not _g_login_redir or 'localhost' in _g_login_redir:
+        GOOGLE_LOGIN_REDIRECT_URI = f"{_render_url}/api/auth/google/login-callback"
+    else:
+        GOOGLE_LOGIN_REDIRECT_URI = _g_login_redir
     
     MODEL_DIR = os.path.join(BASE_DIR, 'model')
 
