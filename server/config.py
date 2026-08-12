@@ -13,12 +13,16 @@ class Config:
     _db_path = os.path.abspath(os.path.join(_instance_dir, 'email_classifier.db'))
     
     _custom_db = os.getenv('DATABASE_URL') or os.getenv('DATABASE_URI')
-    if _custom_db:
+    if _custom_db and not _custom_db.startswith('sqlite'):
         if _custom_db.startswith('postgres://'):
             _custom_db = _custom_db.replace('postgres://', 'postgresql://', 1)
         SQLALCHEMY_DATABASE_URI = _custom_db
     else:
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
+        # Absolute Unix paths starting with '/' need 4 slashes in SQLAlchemy SQLite URI
+        if _db_path.startswith('/'):
+            SQLALCHEMY_DATABASE_URI = f"sqlite:////{_db_path.lstrip('/')}"
+        else:
+            SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {

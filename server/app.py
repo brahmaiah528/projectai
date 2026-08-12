@@ -100,6 +100,9 @@ def create_app():
         return jsonify({'message': 'Internal server error', 'error': str(e)}), 500
 
     with app.app_context():
+        # Ensure instance directory exists before database creation
+        os.makedirs(os.path.join(SERVER_DIR, '..', 'instance'), exist_ok=True)
+        os.makedirs(os.path.join(os.getcwd(), 'instance'), exist_ok=True)
         db.create_all()
         seed_initial_data()
 
