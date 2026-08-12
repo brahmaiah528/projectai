@@ -7,9 +7,19 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'default-jwt-secret-key-987654321')
     
-    # Absolute path to primary SQLite database file
-    _db_path = os.path.abspath(os.path.join(BASE_DIR, 'instance', 'email_classifier.db'))
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
+    # Ensure instance directory exists for SQLite database file
+    _instance_dir = os.path.join(BASE_DIR, 'instance')
+    os.makedirs(_instance_dir, exist_ok=True)
+    _db_path = os.path.abspath(os.path.join(_instance_dir, 'email_classifier.db'))
+    
+    _custom_db = os.getenv('DATABASE_URL') or os.getenv('DATABASE_URI')
+    if _custom_db:
+        if _custom_db.startswith('postgres://'):
+            _custom_db = _custom_db.replace('postgres://', 'postgresql://', 1)
+        SQLALCHEMY_DATABASE_URI = _custom_db
+    else:
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
+    
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'connect_args': {
