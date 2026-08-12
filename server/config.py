@@ -33,8 +33,9 @@ class Config:
     
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
-    GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:5001/api/auth/google/callback')
-    GOOGLE_LOGIN_REDIRECT_URI = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', 'http://localhost:5001/api/auth/google/login-callback')
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://projectai1.vercel.app')
+    GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'https://ai-email-classification.onrender.com/api/auth/google/callback')
+    GOOGLE_LOGIN_REDIRECT_URI = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', 'https://ai-email-classification.onrender.com/api/auth/google/login-callback')
     
     MODEL_DIR = os.path.join(BASE_DIR, 'model')
 

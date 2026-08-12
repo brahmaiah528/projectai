@@ -245,7 +245,8 @@ def google_callback():
               localStorage.setItem('token', token);
               localStorage.setItem('user', JSON.stringify(user));
             }}
-            window.location.href = 'http://localhost:3001/dashboard';
+            const frontendUrl = ${json.dumps(current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app'))};
+            window.location.href = frontendUrl + '/dashboard';
           }}
         </script>
       </div>
@@ -357,7 +358,8 @@ def google_login_callback():
           window.opener.postMessage({{ type: 'GMAIL_CONNECTED', token, user, error: err }}, '*');
           setTimeout(() => window.close(), 200);
         }} else {{
-          window.location.href = 'http://localhost:3001/dashboard';
+          const frontendUrl = ${json.dumps(current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app'))};
+          window.location.href = frontendUrl + '/dashboard';
         }}
       </script>
     </body></html>""", 200
