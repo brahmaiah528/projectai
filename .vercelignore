@@ -1,0 +1,10 @@
+# Ignore Python backend and ML models so Vercel only builds the React frontend
+server/
+model/
+dataset/
+requirements.txt
+Procfile
+render.yaml
+*.py
+*.pkl
+*.csv
