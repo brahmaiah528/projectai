@@ -30,9 +30,6 @@ class MLService:
             vec_path      = os.path.join(MODEL_DIR, 'vectorizer.pkl')
             char_vec_path = os.path.join(MODEL_DIR, 'char_vectorizer.pkl')
             clf_path      = os.path.join(MODEL_DIR, 'classifier.pkl')
-            all_path      = os.path.join(MODEL_DIR, 'all_models.pkl')
-            ens_path      = os.path.join(MODEL_DIR, 'ensemble_models.pkl')
-            ovr_path      = os.path.join(MODEL_DIR, 'ovr_models.pkl')
             metrics_path  = os.path.join(MODEL_DIR, 'model_metrics.json')
 
             if os.path.exists(vec_path):
@@ -47,23 +44,27 @@ class MLService:
                 self.classifier = joblib.load(clf_path)
                 print("[MLService] Best classifier loaded.")
 
-            if os.path.exists(all_path):
-                self.all_models = joblib.load(all_path)
-                print(f"[MLService] {len(self.all_models)} algorithm models loaded.")
-
-            if os.path.exists(ens_path):
-                self.ensemble_components = joblib.load(ens_path)
-                print(f"[MLService] {len(self.ensemble_components)} ensemble components loaded.")
-
-            if os.path.exists(ovr_path):
-                self.ovr_models = joblib.load(ovr_path)
-                print(f"[MLService] {len(self.ovr_models)} per-category OvR models loaded.")
-
             if os.path.exists(metrics_path):
                 with open(metrics_path, 'r') as f:
                     self.metrics = json.load(f)
         except Exception as e:
             print(f"[MLService] Warning: Could not load trained models: {str(e)}")
+
+    def ensure_extra_models(self):
+        """Lazy-loads extra algorithm and OvR models on demand to conserve RAM."""
+        try:
+            all_path = os.path.join(MODEL_DIR, 'all_models.pkl')
+            ens_path = os.path.join(MODEL_DIR, 'ensemble_models.pkl')
+            ovr_path = os.path.join(MODEL_DIR, 'ovr_models.pkl')
+
+            if not self.all_models and os.path.exists(all_path):
+                self.all_models = joblib.load(all_path)
+            if not self.ensemble_components and os.path.exists(ens_path):
+                self.ensemble_components = joblib.load(ens_path)
+            if not self.ovr_models and os.path.exists(ovr_path):
+                self.ovr_models = joblib.load(ovr_path)
+        except Exception as err:
+            print(f"[MLService] Warning loading extra models: {str(err)}")
 
     def _build_feature_vec(self, text):
         """Builds combined word + char TF-IDF feature vector."""

@@ -254,5 +254,6 @@ app = create_app()
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    print(f"Starting Flask Email Classification Server on http://localhost:{port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    is_debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    print(f"Starting Flask Email Classification Server on http://localhost:{port} (debug={is_debug})")
+    app.run(host='0.0.0.0', port=port, debug=is_debug)
