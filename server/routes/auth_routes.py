@@ -216,21 +216,20 @@ def google_callback():
             error_msg = str(e)
             print(f"[Google OAuth Error] {error_msg}")
 
-    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
+    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai-iota.vercel.app').rstrip('/')
 
     import urllib.parse
     if jwt_token and user_data:
-        # Redirect directly to the frontend /auth/callback page with token in URL fragment.
-        # URL fragments are never sent to servers — safe for JWT tokens.
-        fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
-        redirect_url = f"{frontend_url}/auth/callback#{fragment}"
+        # Use query params (not fragment) — query params survive HTTP redirects reliably.
+        # AuthCallbackPage immediately strips them from the URL bar with replaceState.
+        params = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
+        redirect_url = f"{frontend_url}/auth/callback?{params}"
     else:
-        err_msg = urllib.parse.quote(error_msg or 'OAuth failed')
-        redirect_url = f"{frontend_url}/auth/callback#error={err_msg}"
+        err = urllib.parse.urlencode({'error': error_msg or 'OAuth failed'})
+        redirect_url = f"{frontend_url}/auth/callback?{err}"
 
     from flask import redirect as flask_redirect
     return flask_redirect(redirect_url, 302)
-
 
 # ─── Google Sign-In: Any Gmail user can log in / register ─────────────────────
 
@@ -317,17 +316,17 @@ def google_login_callback():
             error_msg = str(e)
             print(f"[Google Login Error] {error_msg}")
 
-    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
+    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai-iota.vercel.app').rstrip('/')
 
     import urllib.parse
     if jwt_token and user_data:
-        # Redirect directly to the frontend /auth/callback page with token in URL fragment.
-        # URL fragments are never sent to servers — safe for JWT tokens.
-        fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
-        redirect_url = f"{frontend_url}/auth/callback#{fragment}"
+        # Use query params (not fragment) — query params survive HTTP redirects reliably.
+        # AuthCallbackPage immediately strips them from the URL bar with replaceState.
+        params = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
+        redirect_url = f"{frontend_url}/auth/callback?{params}"
     else:
-        err_msg = urllib.parse.quote(error_msg or 'Sign-in failed')
-        redirect_url = f"{frontend_url}/auth/callback#error={err_msg}"
+        err = urllib.parse.urlencode({'error': error_msg or 'Sign-in failed'})
+        redirect_url = f"{frontend_url}/auth/callback?{err}"
 
     from flask import redirect as flask_redirect
     return flask_redirect(redirect_url, 302)

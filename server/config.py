@@ -38,7 +38,7 @@ class Config:
     
     _frontend_env = os.getenv('FRONTEND_URL', '').rstrip('/')
     if not _frontend_env or 'localhost' in _frontend_env:
-        FRONTEND_URL = 'https://projectai1.vercel.app'
+        FRONTEND_URL = 'https://projectai-iota.vercel.app'
     else:
         FRONTEND_URL = _frontend_env
 
