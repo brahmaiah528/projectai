@@ -218,50 +218,19 @@ def google_callback():
 
     frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
 
+    import urllib.parse
     if jwt_token and user_data:
-        import urllib.parse
-        token_js = json.dumps(jwt_token)
-        user_js = json.dumps(user_data or {})
-        # Use URL fragment redirect — fragment is never sent to server, safe for tokens
-        # The frontend /auth/callback route reads the hash and stores the token
+        # Redirect directly to the frontend /auth/callback page with token in URL fragment.
+        # URL fragments are never sent to servers — safe for JWT tokens.
         fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
         redirect_url = f"{frontend_url}/auth/callback#{fragment}"
-        return f"""<!DOCTYPE html><html><head><title>Signing in...</title></head>
-        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-            <h2 style="color:#10b981;margin-bottom:8px;">✓ Google Sign-in Complete!</h2>
-            <p style="color:#94a3b8;font-size:13px;">Redirecting to dashboard...</p>
-          </div>
-          <script>
-            const token = {token_js};
-            const user = {user_js};
-            if (window.opener && !window.opener.closed) {{
-              try {{
-                window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: null }}, '*');
-                setTimeout(() => window.close(), 300);
-              }} catch(e) {{
-                window.location.href = {json.dumps(redirect_url)};
-              }}
-            }} else {{
-              window.location.href = {json.dumps(redirect_url)};
-            }}
-          </script>
-        </body></html>""", 200
     else:
-        err_msg = error_msg or 'OAuth failed'
-        return f"""<!DOCTYPE html><html><head><title>Sign-in Failed</title></head>
-        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-            <h2 style="color:#ef4444;margin-bottom:8px;">✗ {err_msg}</h2>
-            <p style="color:#94a3b8;font-size:13px;"><a href="{frontend_url}/login" style="color:#60a5fa;">Return to login</a></p>
-          </div>
-          <script>
-            if (window.opener && !window.opener.closed) {{
-              try {{ window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token: null, user: null, error: {json.dumps(err_msg)} }}, '*'); }} catch(e) {{}}
-              setTimeout(() => window.close(), 2000);
-            }}
-          </script>
-        </body></html>""", 200
+        err_msg = urllib.parse.quote(error_msg or 'OAuth failed')
+        redirect_url = f"{frontend_url}/auth/callback#error={err_msg}"
+
+    from flask import redirect as flask_redirect
+    return flask_redirect(redirect_url, 302)
+
 
 # ─── Google Sign-In: Any Gmail user can log in / register ─────────────────────
 
@@ -350,46 +319,16 @@ def google_login_callback():
 
     frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai1.vercel.app').rstrip('/')
 
+    import urllib.parse
     if jwt_token and user_data:
-        import urllib.parse
-        token_js = json.dumps(jwt_token)
-        user_js = json.dumps(user_data or {})
+        # Redirect directly to the frontend /auth/callback page with token in URL fragment.
+        # URL fragments are never sent to servers — safe for JWT tokens.
         fragment = urllib.parse.urlencode({'token': jwt_token, 'user': json.dumps(user_data)})
         redirect_url = f"{frontend_url}/auth/callback#{fragment}"
-        return f"""<!DOCTYPE html><html><head><title>Signing in...</title></head>
-        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-            <h2 style="color:#10b981;margin-bottom:8px;">✓ Signed in!</h2>
-            <p style="color:#94a3b8;font-size:13px;">Redirecting to dashboard...</p>
-          </div>
-          <script>
-            const token = {token_js};
-            const user = {user_js};
-            if (window.opener && !window.opener.closed) {{
-              try {{
-                window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token, user, error: null }}, '*');
-                window.opener.postMessage({{ type: 'GMAIL_CONNECTED', token, user, error: null }}, '*');
-                setTimeout(() => window.close(), 300);
-              }} catch(e) {{
-                window.location.href = {json.dumps(redirect_url)};
-              }}
-            }} else {{
-              window.location.href = {json.dumps(redirect_url)};
-            }}
-          </script>
-        </body></html>""", 200
     else:
-        err_msg = error_msg or 'Sign-in failed'
-        return f"""<!DOCTYPE html><html><head><title>Sign-in Failed</title></head>
-        <body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-          <div style="text-align:center;padding:28px;background:#1e293b;border-radius:16px;max-width:340px;">
-            <h2 style="color:#ef4444;margin-bottom:8px;">✗ {err_msg}</h2>
-            <p style="color:#94a3b8;font-size:13px;"><a href="{frontend_url}/login" style="color:#60a5fa;">Return to login</a></p>
-          </div>
-          <script>
-            if (window.opener && !window.opener.closed) {{
-              try {{ window.opener.postMessage({{ type: 'GOOGLE_LOGIN_SUCCESS', token: null, user: null, error: {json.dumps(err_msg)} }}, '*'); }} catch(e) {{}}
-              setTimeout(() => window.close(), 2000);
-            }}
-          </script>
-        </body></html>""", 200
+        err_msg = urllib.parse.quote(error_msg or 'Sign-in failed')
+        redirect_url = f"{frontend_url}/auth/callback#error={err_msg}"
+
+    from flask import redirect as flask_redirect
+    return flask_redirect(redirect_url, 302)
+

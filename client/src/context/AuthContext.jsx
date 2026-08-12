@@ -52,6 +52,12 @@ export const AuthProvider = ({ children }) => {
         let isHandled = false;
 
         const handler = (event) => {
+          // Accept messages from same origin (popup redirects to /auth/callback on same domain)
+          // Also accept wildcard for legacy postMessage support
+          const isSameOrigin = event.origin === window.location.origin;
+          const isLegacyWildcard = event.origin !== 'null'; // allow most origins, block sandboxed iframes
+          if (!isSameOrigin && !isLegacyWildcard) return;
+
           if (event.data && (event.data.type === 'GOOGLE_LOGIN_SUCCESS' || event.data.type === 'GMAIL_CONNECTED' || event.data.token)) {
             const { token: jwtToken, user: userData, error } = event.data;
             if (error) { 
