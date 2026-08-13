@@ -352,58 +352,82 @@ def bulk_email_action(current_user):
     data = request.get_json() or {}
     email_ids = data.get('ids', [])
     action = data.get('action')
-    
+
     if not email_ids or not action:
         return jsonify({'message': 'Email IDs and action are required.'}), 400
-        
+
     emails = Email.query.filter(Email.id.in_(email_ids)).all()
     tokens = current_user.google_tokens if current_user.google_tokens else None
-    
+
+    # Collect Gmail API calls to fire AFTER the DB commit so the write lock is
+    # never held during slow network I/O (prevents "database is locked" races
+    # with the background Gmail sync thread).
+    gmail_tasks = []  # list of (fn, *args) tuples
+
     for email in emails:
         msg_id = email.gmail_message_id or (
-            email.message_id if email.message_id and not email.message_id.startswith(('sent_', 'draft_', 'sim_', 'msg_init_'))
+            email.message_id
+            if email.message_id and not email.message_id.startswith(('sent_', 'draft_', 'sim_', 'msg_init_'))
             else None
         )
+
         if action == 'mark_read':
             email.is_read = True
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['UNREAD'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, [], ['UNREAD']))
         elif action == 'mark_unread':
             email.is_read = False
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['UNREAD'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, ['UNREAD'], []))
         elif action == 'star':
             email.is_starred = True
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['STARRED'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, ['STARRED'], []))
         elif action == 'unstar':
             email.is_starred = False
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['STARRED'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, [], ['STARRED']))
         elif action == 'mark_important':
             email.is_important = True
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['IMPORTANT'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, ['IMPORTANT'], []))
         elif action == 'unmark_important':
             email.is_important = False
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['IMPORTANT'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, [], ['IMPORTANT']))
         elif action == 'move_trash':
             email.folder = 'trash'
             email.snoozed_until = None
             if tokens and msg_id:
-                GmailService.trash_live_gmail_message(tokens, msg_id)
+                gmail_tasks.append((GmailService.trash_live_gmail_message, tokens, msg_id))
         elif action == 'restore_inbox':
             email.folder = 'inbox'
             email.snoozed_until = None
             if tokens and msg_id:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['INBOX'], remove_labels=['TRASH'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, ['INBOX'], ['TRASH']))
         elif action == 'delete_permanent':
             if tokens and msg_id:
-                GmailService.delete_live_gmail_message(tokens, msg_id)
+                gmail_tasks.append((GmailService.delete_live_gmail_message, tokens, msg_id))
             db.session.delete(email)
-            
-    db.session.commit()
+
+    # Commit DB changes first — releases the SQLite write lock immediately.
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Bulk action failed: {str(e)}'}), 500
+
+    # Fire Gmail API calls after the transaction is closed (non-blocking best-effort).
+    for task in gmail_tasks:
+        fn, *args = task
+        try:
+            if fn == GmailService.modify_live_gmail_message_labels:
+                fn(args[0], args[1], add_labels=args[2], remove_labels=args[3])
+            else:
+                fn(*args)
+        except Exception as gmail_err:
+            print(f"[Bulk Gmail API Warning] {gmail_err}")
+
     return jsonify({'message': f'Bulk action [{action}] completed for {len(emails)} emails.'}), 200
 
 @email_bp.route('/sync', methods=['POST'])

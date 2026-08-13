@@ -25,11 +25,26 @@ class Config:
             SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'connect_args': {
-            'timeout': 30
+
+    # For SQLite: use WAL journal mode and StaticPool so background threads
+    # can write concurrently without hitting "database is locked".
+    # WAL allows one writer + multiple readers simultaneously.
+    # NullPool avoids cross-thread connection reuse issues in Flask dev server.
+    if not (_custom_db and not _custom_db.startswith('sqlite')):
+        from sqlalchemy.pool import NullPool
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'poolclass': NullPool,
+            'connect_args': {
+                'timeout': 30,           # wait up to 30s before raising OperationalError
+                'check_same_thread': False,
+            }
         }
-    }
+    else:
+        # For Postgres / other production DBs — use standard connection pool
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,
+            'pool_recycle': 300,
+        }
     
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
