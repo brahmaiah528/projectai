@@ -39,6 +39,10 @@ class User(db.Model):
 
 class Email(db.Model):
     __tablename__ = 'emails'
+    __table_args__ = (
+        # Composite index for the most common query: user + folder + date sort
+        db.Index('ix_emails_user_folder_date', 'user_id', 'folder', 'date'),
+    )
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
@@ -63,11 +67,11 @@ class Email(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def to_dict(self):
-        from services.ml_service import MLService
-        priority_highlight = MLService.extract_priority_highlight(self.subject, self.body, self.category)
-        # Determine if currently snoozed
+    def list_dict(self):
+        """Fast serialization for email LIST view — skips ML priority_highlight computation.
+        Use this for GET /api/emails to return 470 emails instantly instead of running 470 ML calls."""
         is_snoozed = bool(self.snoozed_until and self.snoozed_until > datetime.utcnow())
+        body_text = self.body or ''
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -77,8 +81,38 @@ class Email(db.Model):
             "sender_email": self.sender_email,
             "recipient": self.recipient,
             "subject": self.subject,
-            "body": self.body,
-            "snippet": self.snippet or (self.body[:120] + "..." if len(self.body) > 120 else self.body),
+            "body": body_text,
+            "snippet": self.snippet or (body_text[:120] + "..." if len(body_text) > 120 else body_text),
+            "folder": self.folder,
+            "category": self.category,
+            "confidence": round(self.confidence * 100, 1) if self.confidence else 0.0,
+            "is_read": self.is_read,
+            "is_starred": self.is_starred,
+            "is_important": self.is_important,
+            "is_snoozed": is_snoozed,
+            "snoozed_until": self.snoozed_until.isoformat() if self.snoozed_until else None,
+            "priority_highlight": None,  # Computed on-demand in detail view only
+            "date": self.date.isoformat() if self.date else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+    def to_dict(self):
+        """Full serialization with ML priority highlight — use only for single email detail view."""
+        from services.ml_service import MLService
+        priority_highlight = MLService.extract_priority_highlight(self.subject, self.body, self.category)
+        is_snoozed = bool(self.snoozed_until and self.snoozed_until > datetime.utcnow())
+        body_text = self.body or ''
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "message_id": self.message_id,
+            "gmail_message_id": self.gmail_message_id,
+            "sender": self.sender,
+            "sender_email": self.sender_email,
+            "recipient": self.recipient,
+            "subject": self.subject,
+            "body": body_text,
+            "snippet": self.snippet or (body_text[:120] + "..." if len(body_text) > 120 else body_text),
             "folder": self.folder,
             "category": self.category,
             "confidence": round(self.confidence * 100, 1) if self.confidence else 0.0,

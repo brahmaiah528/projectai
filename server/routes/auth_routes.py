@@ -19,8 +19,8 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
     with app_obj.app_context():
         for attempt in range(3):
             try:
-                print(f"[Async Gmail Sync] Starting background sync for {user_email} (max_results=500)...")
-                live_emails = GmailService.fetch_live_gmail_messages(tokens_json, max_results=500)
+                print(f"[Async Gmail Sync] Starting background sync for {user_email} (fetching up to 1000 emails)...")
+                live_emails = GmailService.fetch_live_gmail_messages(tokens_json, max_results=1000)
                 if live_emails:
                     # Seed live emails FIRST — only delete sim_ emails after success
                     seeded = seed_emails_from_data(user_id, live_emails, source="live")

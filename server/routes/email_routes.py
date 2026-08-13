@@ -7,6 +7,7 @@ from services.gmail_service import GmailService
 from services.smtp_service import smtp_service
 from datetime import datetime, timedelta
 import threading
+import time as _time
 
 email_bp = Blueprint('email', __name__)
 
@@ -14,13 +15,13 @@ email_bp = Blueprint('email', __name__)
 PRESERVE_FOLDERS = {'trash', 'sent', 'drafts'}
 
 # ── Per-user seed lock to prevent concurrent seeding race conditions ──────────
-# Ensures only ONE thread seeds emails per user at a time (eliminates SQLite locks)
 _seed_locks = {}          # user_id -> threading.Lock()
-_seed_locks_mutex = threading.Lock()   # protects _seed_locks dict itself
-_seeded_users = set()     # user_ids that already have emails seeded this process lifetime
+_seed_locks_mutex = threading.Lock()
+_seeded_users = set()     # user_ids already seeded
+_seeded_ts = {}           # user_id -> timestamp of last DB verify (float epoch seconds)
+_VERIFY_INTERVAL = 60.0   # Only re-verify DB count every 60 seconds
 
 def _get_user_seed_lock(user_id):
-    """Get or create a per-user threading lock for seed operations."""
     with _seed_locks_mutex:
         if user_id not in _seed_locks:
             _seed_locks[user_id] = threading.Lock()
@@ -114,37 +115,35 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
 
 def ensure_user_emails_exist(user_id):
     """Auto-seeds personalized emails for users with zero emails.
-    Uses a per-user threading lock (blocking) so ALL concurrent requests wait for
-    seeding to complete before querying — prevents empty inbox on page reload.
-    Also handles Render DB wipes by re-seeding if DB count is 0 even after cache hit."""
+    Uses blocking lock + timestamp-based DB check (every 60s) for maximum performance.
+    Handles Render DB wipes by re-seeding if DB count is 0."""
 
-    # Acquire the per-user lock — wait up to 30s for any in-progress seed to finish
+    # Ultra-fast path: seeded recently (within 60s) — zero DB queries, zero lock
+    now = _time.monotonic()
+    if user_id in _seeded_users and (now - _seeded_ts.get(user_id, 0)) < _VERIFY_INTERVAL:
+        return
+
+    # Acquire the per-user lock — wait for any in-progress seed to finish
     user_lock = _get_user_seed_lock(user_id)
     with user_lock:
-        # Fast path: already seeded AND DB still has emails (guards against Render DB wipes)
-        if user_id in _seeded_users:
-            # Verify DB still has emails (Render may have wiped the DB on restart)
-            email_count = Email.query.filter_by(user_id=user_id).count()
-            if email_count > 0:
-                return  # All good — emails exist, skip seeding
-            else:
-                # DB was wiped — remove from cache so we re-seed below
-                _seeded_users.discard(user_id)
+        # Re-check fast path inside lock (another thread may have just seeded)
+        now = _time.monotonic()
+        if user_id in _seeded_users and (now - _seeded_ts.get(user_id, 0)) < _VERIFY_INTERVAL:
+            return
 
         try:
             email_count = Email.query.filter_by(user_id=user_id).count()
             if email_count == 0:
+                # DB empty (new user or Render wipe) — seed now
+                _seeded_users.discard(user_id)
                 from models import User as UserModel
                 user = UserModel.query.get(user_id)
                 user_email = user.email if user else "user@gmail.com"
 
-                # Immediately seed 470 personalized simulation emails (fast, synchronous)
                 simulated_data = GmailService.fetch_user_emails_simulation(user_id)
                 seeded = seed_emails_from_data(user_id, simulated_data, source="simulation")
                 print(f"[Email Seeding] Seeded {seeded} personalized emails for user_id={user_id} ({user_email})")
 
-                # If user has Google OAuth tokens, trigger async background live Gmail sync
-                # (replaces simulation emails with real Gmail inbox/sent/trash/spam)
                 if user and user.google_tokens:
                     try:
                         from routes.auth_routes import _trigger_background_gmail_sync
@@ -153,12 +152,14 @@ def ensure_user_emails_exist(user_id):
                     except Exception as sync_err:
                         print(f"[Email Seeding Background Sync Warning] {str(sync_err)}")
 
-            # Mark as seeded in cache
+            # Mark as verified with current timestamp
             _seeded_users.add(user_id)
+            _seeded_ts[user_id] = _time.monotonic()
 
         except Exception as e:
             db.session.rollback()
             print(f"[Email Seeding Warning] {str(e)}")
+
 
 @email_bp.route('', methods=['GET'])
 @email_bp.route('/', methods=['GET'])
@@ -233,7 +234,7 @@ def get_emails(current_user):
     emails = query.all()
     return jsonify({
         'count': len(emails),
-        'emails': [e.to_dict() for e in emails]
+        'emails': [e.list_dict() for e in emails]  # Fast: no ML calls, instant serialization
     }), 200
 
 @email_bp.route('/<int:email_id>', methods=['GET'])
