@@ -31,13 +31,26 @@ class Config:
     # WAL allows one writer + multiple readers simultaneously.
     # NullPool avoids cross-thread connection reuse issues in Flask dev server.
     if not (_custom_db and not _custom_db.startswith('sqlite')):
+        import sqlite3
+        def _sqlite_creator():
+            conn = sqlite3.connect(
+                _db_path,
+                timeout=60,           # wait up to 60s before raising OperationalError
+                check_same_thread=False
+            )
+            # WAL mode: one writer + multiple readers simultaneously — eliminates most locks
+            conn.execute("PRAGMA journal_mode=WAL")
+            # Slightly relax fsync for performance (safe: WAL already protects integrity)
+            conn.execute("PRAGMA synchronous=NORMAL")
+            # Bigger page cache = fewer disk reads
+            conn.execute("PRAGMA cache_size=-32000")  # ~32MB cache
+            conn.commit()
+            return conn
+
         from sqlalchemy.pool import NullPool
         SQLALCHEMY_ENGINE_OPTIONS = {
             'poolclass': NullPool,
-            'connect_args': {
-                'timeout': 30,           # wait up to 30s before raising OperationalError
-                'check_same_thread': False,
-            }
+            'creator': _sqlite_creator,
         }
     else:
         # For Postgres / other production DBs — use standard connection pool

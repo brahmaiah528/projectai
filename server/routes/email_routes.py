@@ -6,11 +6,25 @@ from services.ml_service import ml_service
 from services.gmail_service import GmailService
 from services.smtp_service import smtp_service
 from datetime import datetime, timedelta
+import threading
 
 email_bp = Blueprint('email', __name__)
 
 # ── Folders that should NEVER be overridden by ML classification ─────────────
 PRESERVE_FOLDERS = {'trash', 'sent', 'drafts'}
+
+# ── Per-user seed lock to prevent concurrent seeding race conditions ──────────
+# Ensures only ONE thread seeds emails per user at a time (eliminates SQLite locks)
+_seed_locks = {}          # user_id -> threading.Lock()
+_seed_locks_mutex = threading.Lock()   # protects _seed_locks dict itself
+_seeded_users = set()     # user_ids that already have emails seeded this process lifetime
+
+def _get_user_seed_lock(user_id):
+    """Get or create a per-user threading lock for seed operations."""
+    with _seed_locks_mutex:
+        if user_id not in _seed_locks:
+            _seed_locks[user_id] = threading.Lock()
+        return _seed_locks[user_id]
 
 def seed_emails_from_data(user_id, email_data, source="simulation"):
     """Helper: Bulk insert or update a list of email dicts into the DB with high performance.
@@ -99,15 +113,31 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
     return count
 
 def ensure_user_emails_exist(user_id):
-    """Auto-seeds personalized emails (350+ count) for users with zero emails, and triggers live background sync if Google OAuth is connected.
-    Guarantees instant response without blocking HTTP requests."""
+    """Auto-seeds personalized emails for users with zero emails, with a per-user
+    threading lock so concurrent requests never race each other on SQLite.
+    Uses an in-memory cache so subsequent requests return instantly (no DB hit)."""
+    # Fast path: already seeded this server lifetime — return immediately, zero DB queries
+    if user_id in _seeded_users:
+        return
+
+    # Acquire the per-user lock — only ONE thread seeds at a time per user
+    user_lock = _get_user_seed_lock(user_id)
+    if not user_lock.acquire(blocking=False):
+        # Another thread is currently seeding — skip (emails will appear shortly)
+        return
+
     try:
-        if Email.query.filter_by(user_id=user_id).count() == 0:
+        # Double-check inside lock to avoid race after waiting
+        if user_id in _seeded_users:
+            return
+
+        email_count = Email.query.filter_by(user_id=user_id).count()
+        if email_count == 0:
             from models import User as UserModel
             user = UserModel.query.get(user_id)
             user_email = user.email if user else "user@gmail.com"
 
-            # 1. Fast seed personalized simulated emails (350+ count matching user_email)
+            # 1. Fast bulk seed personalized simulated emails (470 emails)
             simulated_data = GmailService.fetch_user_emails_simulation(user_id)
             seeded = seed_emails_from_data(user_id, simulated_data, source="simulation")
             print(f"[Email Seeding] Seeded {seeded} personalized emails for user_id={user_id} ({user_email})")
@@ -116,13 +146,19 @@ def ensure_user_emails_exist(user_id):
             if user and user.google_tokens:
                 try:
                     from routes.auth_routes import _trigger_background_gmail_sync
-                    print(f"[Email Seeding] Triggering background live Gmail sync for user_id={user_id} ({user_email})...")
+                    print(f"[Email Seeding] Triggering background live Gmail sync for {user_email}...")
                     _trigger_background_gmail_sync(user_id, user_email, user.google_tokens)
                 except Exception as sync_err:
                     print(f"[Email Seeding Background Sync Warning] {str(sync_err)}")
+
+        # Mark this user as seeded — all future requests skip this block entirely
+        _seeded_users.add(user_id)
+
     except Exception as e:
         db.session.rollback()
         print(f"[Email Seeding Warning] {str(e)}")
+    finally:
+        user_lock.release()
 
 @email_bp.route('', methods=['GET'])
 @email_bp.route('/', methods=['GET'])
