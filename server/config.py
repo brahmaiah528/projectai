@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,10 +32,10 @@ class Config:
     # WAL allows one writer + multiple readers simultaneously.
     # NullPool avoids cross-thread connection reuse issues in Flask dev server.
     if not (_custom_db and not _custom_db.startswith('sqlite')):
-        import sqlite3
-        def _sqlite_creator():
+        db_file_path = _db_path
+        def _sqlite_creator(path=db_file_path):
             conn = sqlite3.connect(
-                _db_path,
+                path,
                 timeout=60,           # wait up to 60s before raising OperationalError
                 check_same_thread=False
             )
