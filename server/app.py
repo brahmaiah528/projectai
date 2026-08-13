@@ -111,6 +111,45 @@ def create_app():
 
     return app
 
+def start_background_keepalive(app):
+    """Starts a daemon background thread that runs every 5 minutes.
+    Ensures emails are always present for all users — re-seeds if Render wiped the SQLite DB.
+    Also runs startup migrations (migrate_simulation_email_categories) without blocking server startup."""
+    import threading
+    import time
+
+    def _keepalive_loop():
+        # Brief initial delay so the server fully starts before running migrations
+        time.sleep(5)
+        with app.app_context():
+            try:
+                migrate_simulation_email_categories()
+            except Exception as e:
+                print(f"[Keepalive] Startup migration warning: {e}")
+
+        while True:
+            try:
+                time.sleep(300)  # Run every 5 minutes
+                with app.app_context():
+                    from routes.email_routes import ensure_user_emails_exist, _seeded_users
+                    users = User.query.all()
+                    for user in users:
+                        count = Email.query.filter_by(user_id=user.id).count()
+                        if count == 0:
+                            # DB was wiped for this user — re-seed immediately
+                            _seeded_users.discard(user.id)
+                            print(f"[Keepalive] Re-seeding emails for {user.email} (DB had 0 emails)")
+                            ensure_user_emails_exist(user.id)
+                        else:
+                            # DB is healthy — mark as seeded in cache so requests are instant
+                            _seeded_users.add(user.id)
+            except Exception as e:
+                print(f"[Keepalive Warning] {str(e)}")
+
+    t = threading.Thread(target=_keepalive_loop, daemon=True, name="EmailKeepalive")
+    t.start()
+    print("[Keepalive] Background email keepalive thread started (runs every 5 min).")
+
 def reclassify_all_user_emails():
     """Re-classifies all emails in database using the upgraded 99.99% multi-model ML ensemble engine."""
     try:
@@ -259,6 +298,10 @@ def seed_initial_data():
         print(f"[App Seed Warning] Handled duplicate seeding: {str(e)}")
 
 app = create_app()
+
+# Start background keepalive thread immediately — works on Gunicorn (Render) AND local dev
+# This runs even if __name__ != '__main__' (i.e., when started by Gunicorn)
+start_background_keepalive(app)
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

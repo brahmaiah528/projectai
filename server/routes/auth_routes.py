@@ -93,6 +93,20 @@ def create_jwt_token(user_id, email=None, remember_me=True):
     }
     return jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm="HS256")
 
+# ─── Logout ───────────────────────────────────────────────────────────────────
+
+@auth_bp.route('/logout', methods=['POST'])
+@token_required
+def logout(current_user):
+    """Clears server-side session cache for this user. Emails persist in DB."""
+    try:
+        from routes.email_routes import _seeded_users
+        _seeded_users.discard(current_user.id)
+        print(f"[Auth] User {current_user.email} logged out. Session cache cleared.")
+    except Exception:
+        pass
+    return jsonify({'message': 'Logged out successfully.'}), 200
+
 # ─── Standard Email/Password Auth ────────────────────────────────────────────
 
 @auth_bp.route('/register', methods=['POST'])
