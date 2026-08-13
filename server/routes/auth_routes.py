@@ -22,6 +22,23 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                 print(f"[Async Gmail Sync] Starting background sync for {user_email} (fetching 100% of ALL Gmail messages)...")
                 live_emails = GmailService.fetch_live_gmail_messages(tokens_json, max_results=None)
                 if live_emails:
+                    print(f"[Async Gmail Sync] Fetched {len(live_emails)} messages. Running batch ML classification...")
+
+                    # Batch classify ALL live emails using ML service (one pass, no per-email calls inside seeder)
+                    try:
+                        from services.ml_service import MLService
+                        for email_item in live_emails:
+                            if not email_item.get('category'):
+                                clf_result = MLService.get_instance().classify_email(
+                                    email_item.get('subject', ''),
+                                    email_item.get('body', '')
+                                )
+                                email_item['category'] = clf_result['category']
+                                email_item['confidence'] = clf_result['confidence']
+                        print(f"[Async Gmail Sync] Batch ML classification done for {len(live_emails)} emails.")
+                    except Exception as clf_err:
+                        print(f"[Async Gmail Sync] ML classify warning: {clf_err}")
+
                     # Seed live emails FIRST — only delete sim_ emails after success
                     seeded = seed_emails_from_data(user_id, live_emails, source="live")
                     print(f"[Async Gmail Sync] Successfully synced {seeded} live emails for {user_email}")
@@ -30,20 +47,26 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                     if seeded > 0:
                         try:
                             from models import Email
-                            Email.query.filter(Email.user_id == user_id, Email.message_id.like('sim_%')).delete()
+                            deleted = Email.query.filter(Email.user_id == user_id, Email.message_id.like('sim_%')).delete()
                             db.session.commit()
+                            print(f"[Async Gmail Sync] Removed {deleted} simulation placeholder emails.")
                         except Exception as del_err:
                             db.session.rollback()
                             print(f"[Async Gmail Sync] Warning clearing sim emails: {del_err}")
 
-                        # Update _seeded_users cache so reloads don't re-seed unnecessarily
+                        # Mark sync as done — frontend polls this to know when to refresh
                         try:
-                            from routes.email_routes import _seeded_users
+                            from routes.email_routes import _gmail_sync_done, _seeded_users, _seeded_ts
+                            import time as _t
+                            _gmail_sync_done.add(user_id)
                             _seeded_users.add(user_id)
+                            # Force-invalidate timestamp cache so next GET /api/emails re-checks DB
+                            _seeded_ts[user_id] = 0.0
+                            print(f"[Async Gmail Sync] Sync marked done for user_id={user_id}")
                         except Exception:
                             pass
 
-                    # Save the current historyId for delta-sync
+                    # Save the current historyId for delta-sync (new email detection)
                     try:
                         profile = GmailService.fetch_gmail_profile(tokens_json)
                         if profile and profile.get('history_id'):

@@ -20,6 +20,7 @@ _seed_locks_mutex = threading.Lock()
 _seeded_users = set()     # user_ids already seeded
 _seeded_ts = {}           # user_id -> timestamp of last DB verify (float epoch seconds)
 _VERIFY_INTERVAL = 60.0   # Only re-verify DB count every 60 seconds
+_gmail_sync_done = set()  # user_ids whose live Gmail sync has completed successfully
 
 def _get_user_seed_lock(user_id):
     with _seed_locks_mutex:
@@ -48,12 +49,23 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
                 original_folder = item.get('folder', 'inbox')
 
                 if source == "simulation" and item.get('category'):
+                    # Simulation emails come pre-labelled — no ML call needed
                     category = item['category']
                     if category == 'Spam' and original_folder == 'inbox':
                         folder = 'spam'
                     else:
                         folder = original_folder
                     confidence = 0.95
+                elif source == "live" and item.get('category'):
+                    # Live emails already classified (passed through classify_batch)
+                    category = item['category']
+                    confidence = item.get('confidence', 0.9)
+                    if original_folder in PRESERVE_FOLDERS:
+                        folder = original_folder
+                    elif category == 'Spam' and original_folder == 'inbox':
+                        folder = 'spam'
+                    else:
+                        folder = original_folder
                 else:
                     clf_result = ml_service.classify_email(item['subject'], item['body'])
                     category = clf_result['category']
@@ -159,6 +171,25 @@ def ensure_user_emails_exist(user_id):
         except Exception as e:
             db.session.rollback()
             print(f"[Email Seeding Warning] {str(e)}")
+
+@email_bp.route('/sync-status', methods=['GET'])
+@token_required
+def get_sync_status(current_user):
+    """Returns whether the live Gmail sync has completed for this user.
+    Frontend polls this every 3s after login to know when to refresh the inbox."""
+    is_done = current_user.id in _gmail_sync_done
+    from models import Email as EmailModel
+    count = EmailModel.query.filter_by(user_id=current_user.id).count()
+    live_count = EmailModel.query.filter(
+        EmailModel.user_id == current_user.id,
+        ~EmailModel.message_id.like('sim_%')
+    ).count()
+    return jsonify({
+        'sync_done': is_done,
+        'total_emails': count,
+        'live_emails': live_count,
+        'sim_emails': count - live_count,
+    }), 200
 
 
 @email_bp.route('', methods=['GET'])

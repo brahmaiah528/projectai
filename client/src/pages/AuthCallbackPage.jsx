@@ -1,23 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import API from '../services/api';
 
 /**
  * AuthCallbackPage — reads Google OAuth token from URL query params and logs user in.
- *
- * The backend redirects here after OAuth:
- *   /auth/callback?token=JWT&user={...}   ← success
- *   /auth/callback?error=message          ← failure
- *
- * Query params are used instead of URL fragment because they survive HTTP 302 redirects
- * reliably across all browsers. We immediately strip them from the URL bar for security.
+ * After login, polls /api/emails/sync-status every 3s until live Gmail sync completes,
+ * then stores a 'gmail_sync_done' flag in sessionStorage so InboxPage can refresh.
  */
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
   const { setTokenAndUser } = useAuth();
   const [status, setStatus] = useState('Completing sign-in...');
+  const [syncMsg, setSyncMsg] = useState('');
   const [isError, setIsError] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const pollRef = useRef(null);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -55,13 +53,44 @@ export default function AuthCallbackPage() {
       // Store token in React context AND localStorage
       setTokenAndUser(token, user);
       sessionStorage.removeItem('google_login_pending');
+      // Clear any old sync-done flag so the inbox knows to wait
+      sessionStorage.removeItem('gmail_sync_done');
 
-      setStatus(`Welcome, ${user.name || user.email}! Redirecting to dashboard...`);
+      setStatus(`Welcome, ${user.name || user.email}!`);
+      setSyncMsg('Importing your Gmail messages in the background...');
 
-      // Short delay so the user sees the success message, then go to dashboard
-      setTimeout(() => {
-        navigate('/dashboard', { replace: true });
-      }, 900);
+      // Poll sync-status every 3 seconds until live Gmail sync is complete
+      let elapsed = 0;
+      pollRef.current = setInterval(async () => {
+        elapsed += 3;
+        try {
+          const res = await API.get('/emails/sync-status', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const { sync_done, total_emails, live_emails, sim_emails } = res.data;
+          if (sync_done || live_emails > 0) {
+            clearInterval(pollRef.current);
+            // Signal InboxPage to reload emails
+            sessionStorage.setItem('gmail_sync_done', '1');
+            setSyncMsg(`✅ ${live_emails} Gmail messages imported!`);
+            setTimeout(() => navigate('/dashboard', { replace: true }), 800);
+          } else if (elapsed >= 180) {
+            // After 3 minutes give up polling and just navigate
+            clearInterval(pollRef.current);
+            sessionStorage.setItem('gmail_sync_done', '1');
+            navigate('/dashboard', { replace: true });
+          } else {
+            const secs = Math.round(elapsed);
+            setSyncMsg(`Syncing your Gmail... (${secs}s) — ${total_emails} emails found so far`);
+          }
+        } catch (pollErr) {
+          // Network error during poll — just navigate after short delay
+          if (elapsed >= 15) {
+            clearInterval(pollRef.current);
+            navigate('/dashboard', { replace: true });
+          }
+        }
+      }, 3000);
 
     } catch (err) {
       console.error('[AuthCallback] Parse error:', err);
@@ -69,6 +98,10 @@ export default function AuthCallbackPage() {
       setErrorMsg('Failed to process sign-in data. Please try again.');
       setTimeout(() => navigate('/login', { replace: true }), 3000);
     }
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   return (
@@ -85,7 +118,7 @@ export default function AuthCallbackPage() {
         padding: '40px 48px',
         background: 'rgba(30, 41, 59, 0.98)',
         borderRadius: '20px',
-        maxWidth: '420px',
+        maxWidth: '440px',
         width: '90%',
         boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
         border: '1px solid rgba(255,255,255,0.08)'
@@ -143,7 +176,21 @@ export default function AuthCallbackPage() {
               </span>
             </div>
 
-            <p style={{ color: '#94a3b8', fontSize: '13px' }}>{status}</p>
+            <p style={{ color: '#e2e8f0', fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{status}</p>
+            {syncMsg && (
+              <p style={{
+                color: syncMsg.startsWith('✅') ? '#10b981' : '#94a3b8',
+                fontSize: '13px',
+                lineHeight: 1.6,
+                padding: '10px 16px',
+                background: 'rgba(255,255,255,0.04)',
+                borderRadius: 10,
+                marginTop: 8
+              }}>{syncMsg}</p>
+            )}
+            <p style={{ color: '#475569', fontSize: '11px', marginTop: 12 }}>
+              Please wait — importing all your Gmail messages including Inbox, Sent, Trash &amp; Spam
+            </p>
           </>
         )}
       </div>
