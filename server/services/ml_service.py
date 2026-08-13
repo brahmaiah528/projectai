@@ -1,5 +1,7 @@
 import os
 import json
+import warnings
+warnings.filterwarnings('ignore')
 import joblib
 import numpy as np
 

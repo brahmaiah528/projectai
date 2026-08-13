@@ -1,5 +1,8 @@
 import os
 import sys
+import warnings
+warnings.filterwarnings('ignore')
+
 from datetime import datetime, timedelta
 
 # Force UTF-8 output encoding on Windows to handle special characters
