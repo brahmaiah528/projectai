@@ -22,18 +22,28 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                 print(f"[Async Gmail Sync] Starting background sync for {user_email} (max_results=500)...")
                 live_emails = GmailService.fetch_live_gmail_messages(tokens_json, max_results=500)
                 if live_emails:
-                    # Clean up temporary simulation emails so real live Gmail messages replace them cleanly
-                    try:
-                        from models import Email
-                        Email.query.filter(Email.user_id == user_id, Email.message_id.like('sim_%')).delete()
-                        db.session.commit()
-                    except Exception as del_err:
-                        db.session.rollback()
-                        print(f"[Async Gmail Sync] Warning clearing sim emails: {del_err}")
-
+                    # Seed live emails FIRST — only delete sim_ emails after success
                     seeded = seed_emails_from_data(user_id, live_emails, source="live")
                     print(f"[Async Gmail Sync] Successfully synced {seeded} live emails for {user_email}")
-                    # Save the current historyId so subsequent requests can use delta-sync
+
+                    # Only now remove simulation placeholders (inbox stays full if seeding failed)
+                    if seeded > 0:
+                        try:
+                            from models import Email
+                            Email.query.filter(Email.user_id == user_id, Email.message_id.like('sim_%')).delete()
+                            db.session.commit()
+                        except Exception as del_err:
+                            db.session.rollback()
+                            print(f"[Async Gmail Sync] Warning clearing sim emails: {del_err}")
+
+                        # Update _seeded_users cache so reloads don't re-seed unnecessarily
+                        try:
+                            from routes.email_routes import _seeded_users
+                            _seeded_users.add(user_id)
+                        except Exception:
+                            pass
+
+                    # Save the current historyId for delta-sync
                     try:
                         profile = GmailService.fetch_gmail_profile(tokens_json)
                         if profile and profile.get('history_id'):
@@ -45,8 +55,7 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                     except Exception as hist_err:
                         print(f"[Async Gmail Sync] Could not save historyId: {hist_err}")
                 else:
-                    print(f"[Async Gmail Sync] No live messages returned, ensuring fallback emails for {user_email}...")
-                    ensure_user_emails_exist(user_id)
+                    print(f"[Async Gmail Sync] No live messages returned, keeping existing emails for {user_email}.")
                 break
             except Exception as e:
                 db.session.rollback()
@@ -54,7 +63,6 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                     time.sleep(1.0)
                     continue
                 print(f"[Async Gmail Sync Warning] {str(e)}")
-                ensure_user_emails_exist(user_id)
                 break
 
 
