@@ -42,8 +42,8 @@ class GmailService:
         return auth_url, None
 
     @staticmethod
-    def fetch_live_gmail_messages(user_tokens_json, max_results=500):
-        """Fetches ALL live emails (including Inbox, Sent, Drafts, Trash, Spam) from real Gmail API using OAuth tokens with full pagination."""
+    def fetch_live_gmail_messages(user_tokens_json, max_results=None):
+        """Fetches 100% of ALL live emails (Inbox, Sent, Drafts, Trash, Spam, Archive) from real Gmail API with full pagination without missing any email."""
         try:
             import threading
             from google.oauth2.credentials import Credentials
@@ -64,7 +64,7 @@ class GmailService:
             # Paginate through ALL pages of messages in the user's Gmail account
             messages = []
             page_token = None
-            limit = max_results if max_results is not None else 500
+            limit = max_results
 
             while True:
                 fetch_kwargs = {'userId': 'me', 'maxResults': 500, 'includeSpamTrash': True}
@@ -88,7 +88,7 @@ class GmailService:
                 print("[Gmail API] No messages found in Gmail account.")
                 return []
 
-            print(f"[Gmail API] Found {len(messages)} total messages across Gmail pages. Fetching full details in parallel (16 threads)...")
+            print(f"[Gmail API] Found {len(messages)} total messages across Gmail pages. Fetching full details in parallel (8 threads)...")
             
             thread_local = threading.local()
 
@@ -109,6 +109,7 @@ class GmailService:
 
                         subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
                         sender_full = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
+                        recipient_full = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'me')
                         date_str = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
 
                         sender_name = sender_full.split('<')[0].strip(" \"'") if '<' in sender_full else sender_full
@@ -120,14 +121,16 @@ class GmailService:
 
                         label_ids = msg_data.get('labelIds', [])
                         folder = 'inbox'
-                        if 'SPAM' in label_ids:
-                            folder = 'spam'
-                        elif 'TRASH' in label_ids:
+                        if 'TRASH' in label_ids:
                             folder = 'trash'
-                        elif 'SENT' in label_ids:
-                            folder = 'sent'
+                        elif 'SPAM' in label_ids:
+                            folder = 'spam'
                         elif 'DRAFT' in label_ids:
                             folder = 'drafts'
+                        elif 'SENT' in label_ids and 'INBOX' not in label_ids:
+                            folder = 'sent'
+                        else:
+                            folder = 'inbox'
 
                         email_date = datetime.utcnow()
                         if date_str:
@@ -142,7 +145,7 @@ class GmailService:
                             "gmail_message_id": msg['id'],  # Real Gmail ID for API operations
                             "sender": sender_name or "Unknown Sender",
                             "sender_email": sender_email or "unknown@gmail.com",
-                            "recipient": "me",
+                            "recipient": recipient_full or "me",
                             "subject": subject,
                             "body": rendered_body or snippet or "No content.",
                             "plain_text": plain_text or snippet or "",
