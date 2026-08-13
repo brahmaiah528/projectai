@@ -22,6 +22,15 @@ def _async_gmail_sync(app_obj, user_id, user_email, tokens_json):
                 print(f"[Async Gmail Sync] Starting background sync for {user_email} (max_results=500)...")
                 live_emails = GmailService.fetch_live_gmail_messages(tokens_json, max_results=500)
                 if live_emails:
+                    # Clean up temporary simulation emails so real live Gmail messages replace them cleanly
+                    try:
+                        from models import Email
+                        Email.query.filter(Email.user_id == user_id, Email.message_id.like('sim_%')).delete()
+                        db.session.commit()
+                    except Exception as del_err:
+                        db.session.rollback()
+                        print(f"[Async Gmail Sync] Warning clearing sim emails: {del_err}")
+
                     seeded = seed_emails_from_data(user_id, live_emails, source="live")
                     print(f"[Async Gmail Sync] Successfully synced {seeded} live emails for {user_email}")
                     # Save the current historyId so subsequent requests can use delta-sync

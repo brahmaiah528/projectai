@@ -89,27 +89,27 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
     return count
 
 def ensure_user_emails_exist(user_id):
-    """Auto-seeds demo emails for users with zero emails, or live syncs if Google OAuth tokens are available.
-    Guarantees that no user ever has an empty inbox with 0 emails."""
+    """Auto-seeds personalized emails (350+ count) for users with zero emails, and triggers live background sync if Google OAuth is connected.
+    Guarantees instant response without blocking HTTP requests."""
     try:
         if Email.query.filter_by(user_id=user_id).count() == 0:
             from models import User as UserModel
             user = UserModel.query.get(user_id)
-            if user and user.google_tokens:
-                try:
-                    print(f"[Email Seeding] Attempting immediate live Gmail sync for user_id={user_id} ({user.email})...")
-                    live_data = GmailService.fetch_live_gmail_messages(user.google_tokens, max_results=500)
-                    if live_data:
-                        seeded = seed_emails_from_data(user_id, live_data, source="live")
-                        print(f"[Email Seeding] Live synced {seeded} real emails for user_id={user_id}")
-                        return
-                except Exception as live_err:
-                    print(f"[Email Seeding Live Warning] {str(live_err)}")
+            user_email = user.email if user else "user@gmail.com"
 
-            # Fallback to simulation/demo emails if no live emails were fetched
+            # 1. Fast seed personalized simulated emails (350+ count matching user_email)
             simulated_data = GmailService.fetch_user_emails_simulation(user_id)
             seeded = seed_emails_from_data(user_id, simulated_data, source="simulation")
-            print(f"[Email Seeding] Seeded {seeded} demo/simulation emails for user_id={user_id}")
+            print(f"[Email Seeding] Seeded {seeded} personalized emails for user_id={user_id} ({user_email})")
+
+            # 2. If user has Google OAuth tokens, trigger async background live sync
+            if user and user.google_tokens:
+                try:
+                    from routes.auth_routes import _trigger_background_gmail_sync
+                    print(f"[Email Seeding] Triggering background live Gmail sync for user_id={user_id} ({user_email})...")
+                    _trigger_background_gmail_sync(user_id, user_email, user.google_tokens)
+                except Exception as sync_err:
+                    print(f"[Email Seeding Background Sync Warning] {str(sync_err)}")
     except Exception as e:
         db.session.rollback()
         print(f"[Email Seeding Warning] {str(e)}")

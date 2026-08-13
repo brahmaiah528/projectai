@@ -27,22 +27,26 @@ class MLService:
 
     def load_models(self):
         try:
+            import warnings
             vec_path      = os.path.join(MODEL_DIR, 'vectorizer.pkl')
             char_vec_path = os.path.join(MODEL_DIR, 'char_vectorizer.pkl')
             clf_path      = os.path.join(MODEL_DIR, 'classifier.pkl')
             metrics_path  = os.path.join(MODEL_DIR, 'model_metrics.json')
 
-            if os.path.exists(vec_path):
-                self.vectorizer = joblib.load(vec_path)
-                print("[MLService] Word TF-IDF vectorizer loaded.")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
 
-            if os.path.exists(char_vec_path):
-                self.char_vectorizer = joblib.load(char_vec_path)
-                print("[MLService] Char TF-IDF vectorizer loaded.")
+                if os.path.exists(vec_path):
+                    self.vectorizer = joblib.load(vec_path)
+                    print("[MLService] Word TF-IDF vectorizer loaded.")
 
-            if os.path.exists(clf_path):
-                self.classifier = joblib.load(clf_path)
-                print("[MLService] Best classifier loaded.")
+                if os.path.exists(char_vec_path):
+                    self.char_vectorizer = joblib.load(char_vec_path)
+                    print("[MLService] Char TF-IDF vectorizer loaded.")
+
+                if os.path.exists(clf_path):
+                    self.classifier = joblib.load(clf_path)
+                    print("[MLService] Best classifier loaded.")
 
             if os.path.exists(metrics_path):
                 with open(metrics_path, 'r') as f:
@@ -53,16 +57,20 @@ class MLService:
     def ensure_extra_models(self):
         """Lazy-loads extra algorithm and OvR models on demand to conserve RAM."""
         try:
+            import warnings
             all_path = os.path.join(MODEL_DIR, 'all_models.pkl')
             ens_path = os.path.join(MODEL_DIR, 'ensemble_models.pkl')
             ovr_path = os.path.join(MODEL_DIR, 'ovr_models.pkl')
 
-            if not self.all_models and os.path.exists(all_path):
-                self.all_models = joblib.load(all_path)
-            if not self.ensemble_components and os.path.exists(ens_path):
-                self.ensemble_components = joblib.load(ens_path)
-            if not self.ovr_models and os.path.exists(ovr_path):
-                self.ovr_models = joblib.load(ovr_path)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+
+                if not self.all_models and os.path.exists(all_path):
+                    self.all_models = joblib.load(all_path)
+                if not self.ensemble_components and os.path.exists(ens_path):
+                    self.ensemble_components = joblib.load(ens_path)
+                if not self.ovr_models and os.path.exists(ovr_path):
+                    self.ovr_models = joblib.load(ovr_path)
         except Exception as err:
             print(f"[MLService] Warning loading extra models: {str(err)}")
 
