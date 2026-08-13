@@ -683,6 +683,18 @@ class GmailService:
     def get_simulated_messages(user_id, user_email="user@gmail.com", user_name="User"):
         """Returns a personalized, rich list of 350+ simulated emails dynamically customized for the logged in user."""
         now = datetime.utcnow()
+        return [
+            {
+                "message_id": f"sim_exam_001_{user_id}",
+                "sender": "UPSC Notifications",
+                "sender_email": "notifications@upsc.gov.in",
+                "recipient": "user@gmail.com",
+                "subject": "UPSC Civil Services Mains 2026 - Admit Card",
+                "body": "Your admit card for the UPSC Civil Services (Mains) Examination 2026 is now available. Please download and print it before your examination date.",
+                "folder": "inbox",
+                "category": "Examinations",
+                "is_read": False,
+                "is_starred": False,
                 "date": now - timedelta(days=2)
             },
             {
@@ -1183,92 +1195,149 @@ class GmailService:
                 "sender": "Apollo 24|7",
                 "sender_email": "consult@apollo247.com",
                 "recipient": "user@gmail.com",
-                "subject": "Your Online Consultation with Dr. Priya is Confirmed - 6 PM Today",
                 "body": "Your video consultation with Dr. Priya Nair (General Physician) on Apollo 24|7 is confirmed for today at 6:00 PM. Consultation ID: AP247-10392. Please keep your symptoms noted and join the video call 5 minutes before the scheduled time.",
                 "folder": "inbox",
                 "category": "Healthcare",
                 "is_read": True,
                 "is_starred": False,
                 "date": now - timedelta(hours=12)
-            },
-            # --- NEWSLETTERS ---
-            {
-                "message_id": f"sim_newsletter_001_{user_id}",
-                "sender": "TechCrunch Weekly",
-                "sender_email": "newsletter@techcrunch.com",
-                "recipient": "user@gmail.com",
-                "subject": "This Week in Tech: AI Takes Center Stage",
-                "body": "This week's top stories: OpenAI releases o3 API for enterprise. Google DeepMind's AlphaGenome decodes regulatory DNA. Meta open-sources LLaMA 4. Plus: Best practices for LLM prompt engineering.",
-                "folder": "inbox",
-                "category": "Newsletters",
-                "is_read": True,
-                "is_starred": False,
-                "date": now - timedelta(days=1, hours=10)
-            },
-            {
-                "message_id": f"sim_newsletter_002_{user_id}",
-                "sender": "Dev.to Weekly",
-                "sender_email": "newsletter@dev.to",
-                "recipient": "user@gmail.com",
-                "subject": "Top Articles This Week: React Server Components, Rust Async & AI Agents",
-                "body": "This week's most-read articles on Dev.to: 1. Understanding React Server Components (3.2k reactions) 2. Async Rust - A Practical Guide (2.8k reactions) 3. Building AI Agents with LangChain (2.5k reactions). Read them on dev.to!",
-                "folder": "inbox",
-                "category": "Newsletters",
-                "is_read": False,
-                "is_starred": False,
-                "date": now - timedelta(hours=26)
-            },
-            {
-                "message_id": f"sim_newsletter_003_{user_id}",
-                "sender": "Product Hunt Daily",
-                "sender_email": "digest@producthunt.com",
-                "recipient": "user@gmail.com",
-                "subject": "Today's Top Products: AI Writing Tool, No-Code Builder & More",
-                "body": "Today's top products on Product Hunt: #1 Notion AI 2.0 - The most upvoted product. #2 FlutterFlow 4 - Build apps without code. #3 ChatPDF Pro - Chat with any PDF. Explore all launches at producthunt.com.",
-                "folder": "inbox",
-                "category": "Newsletters",
-                "is_read": True,
-                "is_starred": False,
-                "date": now - timedelta(hours=30)
-            },
-            {
-                "message_id": f"sim_newsletter_004_{user_id}",
-                "sender": "HackerNews Digest",
-                "sender_email": "digest@hackernewsletter.com",
-                "recipient": "user@gmail.com",
-                "subject": "Hacker Newsletter #710 - Best of HN This Week",
-                "body": "Welcome to Hacker Newsletter #710! This week's best Hacker News discussions: How Cloudflare handles 55 million HTTP requests per second, Why SQLite is taking over the world, and The hidden cost of microservices. Read more at hackernewsletter.com.",
-                "folder": "inbox",
-                "category": "Newsletters",
-                "is_read": False,
-                "is_starred": False,
-                "date": now - timedelta(days=2, hours=6)
-            },
-            {
-                "message_id": f"sim_newsletter_005_{user_id}",
-                "sender": "Medium Daily Digest",
-                "sender_email": "noreply@medium.com",
-                "recipient": "user@gmail.com",
-                "subject": "Stories Curated for You: System Design, Python Tips & Career Growth",
-                "body": "Your daily digest from Medium: 'How I Passed the Google SWE Interview' by Alex Chen (12 min read). 'Python One-Liners That Will Blow Your Mind' by Sarah Dev (5 min read). 'System Design Interview: Design Twitter' by Tech Insider (18 min read). Read on medium.com.",
-                "folder": "inbox",
-                "category": "Newsletters",
-                "is_read": True,
-                "is_starred": False,
-                "date": now - timedelta(days=2, hours=10)
-            },
-            # --- SPAM (OTP Phishing example) ---
-            {
-                "message_id": f"sim_spam_otp_001_{user_id}",
-                "sender": "Fake Bank Security",
-                "sender_email": "security@bank-alert-verify.ru",
-                "recipient": "user@gmail.com",
-                "subject": "URGENT: Share OTP to Unblock Your Account Immediately",
-                "body": "Your bank account has been temporarily blocked due to suspicious activity. A bank representative will call you shortly. Please share the OTP you received on your phone to verify your identity and claim your account access. Failure to do so will result in permanent account suspension.",
-                "folder": "spam",
-                "category": "Spam",
-                "is_read": False,
-                "is_starred": False,
-                "date": now - timedelta(hours=2)
-            },
+            }
         ]
+
+    @staticmethod
+    def fetch_user_emails_simulation(user_id):
+        """Fetches personalized simulated emails (350+ count) specifically for a user's email address."""
+        from models import User
+        user = User.query.get(user_id)
+        user_email = user.email if user else "user@gmail.com"
+        user_name = user.name if (user and user.name) else (user_email.split('@')[0].title() if '@' in user_email else "User")
+        return GmailService.get_simulated_messages(user_id, user_email=user_email, user_name=user_name)
+
+    @staticmethod
+    def get_simulated_messages(user_id, user_email="user@gmail.com", user_name="User"):
+        """Returns a personalized, rich list of 350+ simulated emails dynamically customized for the logged in user."""
+        now = datetime.utcnow()
+        messages = []
+
+        categories_data = [
+            # (category, sender, sender_email, subject_tpl, body_tpl, is_read_default, is_starred_default, count)
+            ("Updates", "Chase Security Alert", "no-reply@chase.com", "Your Security Verification Code is {code}", "Use code {code} to complete your online banking login. This code expires in 10 minutes.", False, True, 40),
+            ("Updates", "Google Account Security", "no-reply@accounts.google.com", "Security Alert: New Sign-in on Windows Device", "A new sign-in was detected for your account {user_email} on a Windows PC.", True, False, 40),
+            ("Updates", "GitHub Security", "support@github.com", "Security Advisory: Vulnerability detected in your repo", "We found 2 security advisories affecting dependencies in your repository.", False, False, 40),
+            ("Updates", "Amazon Logistics", "shipments@amazon.com", "Order #{code} Shipped & Out for Delivery", "Your package is out for delivery today. Track your order on Amazon.", True, False, 40),
+
+            ("Banking", "Chase Bank", "alerts@chase.com", "Security Alert: Login Detected from New Device", "Dear {user_name}, a login was detected on your Chase Account ending 4819.", False, True, 35),
+            ("Banking", "HDFC Bank Alerts", "alerts@hdfcbank.com", "INR {amount} Debited from Account", "Dear Customer, INR {amount}.00 was debited from your savings account. Balance: INR 84,210.", True, False, 35),
+            ("Banking", "Wells Fargo", "online@wellsfargo.com", "Monthly Account Statement Ready", "Your electronic statement for account ending 9012 is available for download.", False, False, 35),
+            ("Banking", "PayPal Billing", "service@paypal.com", "Payment Receipt: You paid ${amount}.00 to Digital Services", "Transaction ID {code}. Details: Monthly subscription payment to Digital Services Inc.", True, False, 35),
+
+            ("Important", "Chase Credit Card", "billing@chase.com", "URGENT: Credit Card Bill Payment Pending - Due Today (${amount})", "Dear {user_name}, your credit card bill of ${amount}.00 is due today. Avoid late fees by paying now.", False, True, 35),
+            ("Important", "Google Cloud", "support@cloud.google.com", "Action Required: GCP Cluster Quota at 95%", "Your Kubernetes cluster in project 'prod-app' is reaching resource quota limit.", False, True, 35),
+            ("Important", "Internal Revenue Service", "notice@irs.gov", "Important Tax Filing Confirmation Notice", "Tax document submission confirmation for tax year 2025. Reference ID #{code}.", True, True, 35),
+
+            ("Jobs", "LinkedIn Recruiter", "talent@techrecruiter.io", "Senior Full-Stack / ML Engineer Role - Remote ($160k-$200k)", "Hi {user_name}! I came across your profile and would love to connect for a 15-min chat.", False, True, 30),
+            ("Jobs", "Indeed Job Alerts", "alerts@indeed.com", "15 New Jobs Matching 'Senior Software Engineer'", "New openings matching your profile: Senior Python Dev at TechCorp, Backend Lead at DataScale.", True, False, 30),
+            ("Jobs", "Google Careers", "no-reply@careers.google.com", "Interview Invitation: Software Engineering Position", "Dear {user_name}, we are pleased to invite you for a 45-minute technical interview.", False, True, 30),
+
+            ("Examinations", "University Exam Board", "exams@university.edu", "Admit Card Released: Final Examination Schedule", "Dear Student, your hall ticket and admit card for final semester exams are available for download.", False, True, 25),
+            ("Examinations", "Coursera Certifications", "no-reply@coursera.org", "Congratulations! You earned your Specialization Certificate", "You completed 'Machine Learning & Neural Networks'. View your official certificate.", True, False, 25),
+
+            ("Office", "Engineering Team Lead", "lead@company.com", "URGENT: Sprint Deliverable & Code Review Due EOD", "Hi Team, please complete your code review and pull request submissions by 5 PM today.", False, True, 35),
+            ("Office", "HR Operations", "hr@company.com", "Updated Remote Work & Leave Policy Document 2026", "Please review the updated employee benefits handbook and remote work guidelines.", True, False, 35),
+            ("Office", "Jira Notifications", "jira@atlassian.com", "Issue PROJ-{code} assigned to you: Fix Authentication Bug", "Status changed to In Progress. Priority: High. Assigned to {user_name}.", False, False, 35),
+
+            ("Healthcare", "Apollo Health Clinic", "appointments@apollohealth.com", "Appointment Reminder: Dr. Smith Consultation Tomorrow", "Dear {user_name}, your consultation is scheduled for tomorrow at 3:00 PM. Lab report attached.", False, True, 20),
+            ("Healthcare", "Walgreens Pharmacy", "rx@walgreens.com", "Your Prescription Refill is Ready for Pickup", "Rx #{code} is ready at 5th St Pharmacy. Auto-refill confirmed.", True, False, 20),
+
+            ("Immediate Reply", "Executive Operations", "ops@clientfirm.com", "Awaiting Your Urgent Response Regarding Contract Terms", "Hi {user_name}, we need your final confirmation before onboarding client project. Please reply immediately.", False, True, 25),
+            ("Immediate Reply", "Legal Team", "legal@partnercorp.com", "Urgent: Non-Disclosure Agreement Signature Required", "Please review and sign the attached NDA document by today afternoon.", False, True, 25),
+
+            ("Promotions", "Spotify Premium", "promo@spotify.com", "3 Months Free Premium Music Offer", "Special summer deal! Enjoy ad-free music listening for 3 full months.", True, False, 30),
+            ("Promotions", "Uber Deals", "offers@uber.com", "50% Off Your Next 3 Rides This Week", "Use promo code SUMMER50 at checkout to claim your discount.", True, False, 30),
+
+            ("Purchases", "Apple Store", "no_reply@email.apple.com", "Receipt for Your App Store & iCloud Subscription", "Invoice total: $14.99. Order ID MKY{code}. Billed to {user_email}.", True, False, 30),
+            ("Purchases", "Amazon.com", "auto-confirm@amazon.com", "Order Confirmation #{code}", "Thank you for buying from Amazon! Estimated delivery: Tomorrow by 8 PM.", True, False, 30),
+
+            ("Social", "Twitter / X", "info@x.com", "Weekly Digest: Top Posts in AI & Tech", "See popular conversations and trending topics in your network.", True, False, 25),
+            ("Social", "Reddit Digest", "noreply@reddit.com", "Trending on r/MachineLearning and r/Python today", "Check out top discussions: 'Building scalable microservices with Flask'.", True, False, 25),
+
+            ("Personal", "Family & Friends", "mom@family.com", "Sunday Family Lunch & Weekend Getaway", "Hi {user_name}! Hope your week is going great. Are you joining us for Sunday lunch?", False, True, 25),
+
+            ("Customer Support", "Zendesk Support", "support@services.zendesk.com", "Ticket #{code} Resolved: Internet Service Connection Fixed", "Your support request regarding broadband latency has been resolved by our technician.", True, False, 20),
+
+            ("Travel", "Airbnb Reservations", "automated@airbnb.com", "Reservation Confirmed: Beachfront Villa Flight Trip", "Reservation #{code}. Check-in: 3:00 PM. Host instructions attached.", True, True, 20),
+
+            ("Newsletters", "Product Hunt Daily", "digest@producthunt.com", "Today's Top 5 AI Products & Developer Tools", "Check out the #1 launch today: Next-gen AI Code Assistant with high accuracy.", True, False, 25),
+
+            ("Spam", "Fake Bank Alert", "security@verify-bank-pass.ru", "URGENT: Share OTP to Unblock Your Account Immediately", "Your account is locked! Call 1-800-FAKE or share your OTP to prevent termination.", False, False, 25)
+        ]
+
+        item_id = 100
+        for cat_name, sender_name, sender_email, sub_tpl, body_tpl, is_read_default, is_starred_default, target_count in categories_data:
+            folder = "spam" if cat_name == "Spam" else "inbox"
+            matching_templates = [c for c in categories_data if c[0] == cat_name]
+            items_per_template = max(1, target_count // len(matching_templates))
+            for i in range(items_per_template):
+                item_id += 1
+                code = 4000 + (item_id * 17) % 5000
+                amount = 25 + (item_id * 13) % 450
+                hours_ago = (item_id - 100) * 4
+                msg_date = now - timedelta(hours=hours_ago)
+
+                sub = sub_tpl.format(user_name=user_name, user_email=user_email, code=code, amount=amount)
+                body = body_tpl.format(user_name=user_name, user_email=user_email, code=code, amount=amount)
+
+                messages.append({
+                    "message_id": f"sim_{cat_name.lower().replace(' ', '_')}_{item_id}_{user_id}",
+                    "sender": sender_name,
+                    "sender_email": sender_email,
+                    "recipient": user_email,
+                    "subject": sub,
+                    "body": body,
+                    "folder": folder,
+                    "category": cat_name,
+                    "is_read": is_read_default if i > 0 else False,
+                    "is_starred": is_starred_default if i % 3 == 0 else False,
+                    "is_important": True if cat_name in ["Important", "Banking", "Immediate Reply", "Examinations"] else False,
+                    "date": msg_date
+                })
+
+        # Add 25 Sent emails from user_name / user_email
+        for s_idx in range(1, 26):
+            item_id += 1
+            msg_date = now - timedelta(hours=s_idx * 7)
+            messages.append({
+                "message_id": f"sim_sent_{item_id}_{user_id}",
+                "sender": user_name,
+                "sender_email": user_email,
+                "recipient": f"colleague_{s_idx}@company.com",
+                "subject": f"Re: Project Sync & Deliverable Status Update #{s_idx}",
+                "body": f"Hi team, sharing the latest updates for sprint task #{s_idx}. The code changes have been tested and deployed.",
+                "folder": "sent",
+                "category": "Office",
+                "is_read": True,
+                "is_starred": False,
+                "is_important": False,
+                "date": msg_date
+            })
+
+        # Add 10 Draft emails
+        for d_idx in range(1, 11):
+            item_id += 1
+            msg_date = now - timedelta(hours=d_idx * 12)
+            messages.append({
+                "message_id": f"sim_draft_{item_id}_{user_id}",
+                "sender": user_name,
+                "sender_email": user_email,
+                "recipient": f"client_{d_idx}@external.com",
+                "subject": f"[Draft] Proposal Discussion & Requirements Review #{d_idx}",
+                "body": f"Draft proposal notes for project review #{d_idx}. Pending attachment.",
+                "folder": "drafts",
+                "category": "Immediate Reply",
+                "is_read": True,
+                "is_starred": False,
+                "is_important": False,
+                "date": msg_date
+            })
+
+        return messages
