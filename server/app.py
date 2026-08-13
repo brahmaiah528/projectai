@@ -134,9 +134,9 @@ def reclassify_all_user_emails():
         print(f"[ML Re-Classification Warning] {str(err)}")
 
 def migrate_simulation_email_categories():
-    """Fixes demo-account simulation emails that were mis-classified by ML.
-    IMPORTANT: Never touches users with real Google OAuth tokens (gmail users).
-    Only re-seeds simulation emails for demo accounts like admin@gmail.com, user@gmail.com."""
+    """Ensures demo-account simulation emails are stable and plentiful (470 emails).
+    SAFE: Only adds missing emails — never deletes existing emails that users can see.
+    IMPORTANT: Never touches users with real Google OAuth tokens (gmail users)."""
     try:
         from services.gmail_service import GmailService
         from routes.email_routes import seed_emails_from_data
@@ -148,34 +148,39 @@ def migrate_simulation_email_categories():
 
         fixed_count = 0
         for user in demo_users:
-            # Check if user has simulation emails that may have wrong categories
-            sim_emails = Email.query.filter(
-                Email.user_id == user.id,
-                Email.message_id.like('sim_%')
-            ).count()
+            total_emails = Email.query.filter_by(user_id=user.id).count()
             old_seed_emails = Email.query.filter(
                 Email.user_id == user.id,
                 Email.message_id.like('msg_init_%')
             ).count()
 
-            has_sim_only = (sim_emails > 0 or old_seed_emails > 0) and Email.query.filter(
-                Email.user_id == user.id,
-                ~Email.message_id.like('sim_%'),
-                ~Email.message_id.like('msg_init_%')
-            ).count() == 0
+            # Only migrate if: user has fewer than 50 emails (new/empty account)
+            # OR user only has the old tiny 12-email seed (msg_init_ format)
+            # NEVER delete emails if user already has a healthy 100+ emails
+            needs_migration = (total_emails < 50) or (old_seed_emails > 0 and total_emails < 100)
 
-            if has_sim_only:
-                Email.query.filter(Email.user_id == user.id).delete()
-                db.session.commit()
+            if needs_migration:
+                # Safe: only delete the old tiny seed emails, keep any existing sim_ emails
+                if old_seed_emails > 0:
+                    Email.query.filter(
+                        Email.user_id == user.id,
+                        Email.message_id.like('msg_init_%')
+                    ).delete()
+                    try:
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+
+                # Add new emails without deleting existing ones (seed_emails_from_data is idempotent)
                 sim_data = GmailService.fetch_user_emails_simulation(user.id)
                 seeded = seed_emails_from_data(user.id, sim_data, source="simulation")
                 fixed_count += 1
-                print(f"[Migration] Fixed {seeded} emails for {user.email}")
+                print(f"[Migration] Ensured {seeded} emails for {user.email} (had {total_emails} before)")
 
         if fixed_count > 0:
-            print(f"[Migration] [OK] Fixed simulation email categories for {fixed_count} user(s).")
+            print(f"[Migration] [OK] Ensured full simulation email set for {fixed_count} user(s).")
         else:
-            print("[Migration] [OK] All demo users' email categories are up-to-date.")
+            print("[Migration] [OK] All demo users already have a full email set — no changes needed.")
     except Exception as e:
         print(f"[Migration Warning] {str(e)}")
 

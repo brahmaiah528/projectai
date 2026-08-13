@@ -67,10 +67,22 @@ def _trigger_background_gmail_sync(user_id, user_email, tokens_json):
     )
     t.start()
 
-def create_jwt_token(user_id, remember_me=False):
+def create_jwt_token(user_id, email=None, remember_me=True):
+    if not email:
+        try:
+            from models import User
+            user = User.query.get(user_id)
+            email = user.email if user else ""
+        except Exception:
+            email = ""
     now_ts = int(time.time())
-    exp_seconds = 30 * 86400 if remember_me else 7 * 86400
-    payload = {'user_id': user_id, 'iat': now_ts, 'exp': now_ts + exp_seconds}
+    exp_seconds = 365 * 86400  # Permanent 1-year token for long long run
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'iat': now_ts,
+        'exp': now_ts + exp_seconds
+    }
     return jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm="HS256")
 
 # ─── Standard Email/Password Auth ────────────────────────────────────────────
@@ -97,7 +109,7 @@ def register():
     log = SystemLog(user_id=user.id, user_email=user.email, action="USER_REGISTERED", details=f"Registered: {email}")
     db.session.add(log)
     db.session.commit()
-    token = create_jwt_token(user.id, False)
+    token = create_jwt_token(user.id, email=user.email, remember_me=False)
     return jsonify({'message': 'Registration successful!', 'token': token, 'user': user.to_dict()}), 201
 
 @auth_bp.route('/login', methods=['POST'])
@@ -112,7 +124,7 @@ def login():
     if not user or not user.check_password(password):
         return jsonify({'message': 'Invalid email or password.'}), 401
     ensure_user_emails_exist(user.id)
-    token = create_jwt_token(user.id, remember_me)
+    token = create_jwt_token(user.id, email=user.email, remember_me=remember_me)
     log = SystemLog(user_id=user.id, user_email=user.email, action="USER_LOGIN", details=f"Login: {email}")
     db.session.add(log)
     db.session.commit()
@@ -213,7 +225,7 @@ def google_callback():
                     ensure_user_emails_exist(target_user.id)
                     _trigger_background_gmail_sync(target_user.id, user_email, target_user.google_tokens)
 
-                    jwt_token = create_jwt_token(target_user.id, remember_me=True)
+                    jwt_token = create_jwt_token(target_user.id, email=target_user.email, remember_me=True)
                     user_data = target_user.to_dict()
                     print(f"[Google OAuth] Gmail connected & session issued for: {target_user.email}")
                 else:
@@ -312,7 +324,7 @@ def google_login_callback():
                         ensure_user_emails_exist(user.id)
                         _trigger_background_gmail_sync(user.id, g_email, user.google_tokens)
 
-                        jwt_token = create_jwt_token(user.id, remember_me=True)
+                        jwt_token = create_jwt_token(user.id, email=user.email, remember_me=True)
                         user_data = user.to_dict()
                     else:
                         error_msg = "Could not retrieve email from Google account."
