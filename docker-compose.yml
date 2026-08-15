@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: email_classifier_backend
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      PORT: 5001
+      FLASK_APP: server/app.py
+    volumes:
+      - ./instance:/app/instance
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:5001
+    container_name: email_classifier_frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

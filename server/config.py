@@ -41,6 +41,8 @@ class Config:
             )
             # WAL mode: one writer + multiple readers simultaneously — eliminates most locks
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA foreign_keys=ON")
             # Slightly relax fsync for performance (safe: WAL already protects integrity)
             conn.execute("PRAGMA synchronous=NORMAL")
             # Bigger page cache = fewer disk reads
@@ -62,38 +64,16 @@ class Config:
     
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
-    
-    _is_render = bool(os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_URL'))
-    _render_url = os.getenv('RENDER_EXTERNAL_URL', 'https://ai-email-classification.onrender.com').rstrip('/')
 
-    _frontend_env = os.getenv('FRONTEND_URL', '').rstrip('/')
-    if _frontend_env:
-        FRONTEND_URL = _frontend_env
-    elif _is_render:
-        FRONTEND_URL = 'https://projectai-iota.vercel.app'
-    else:
-        FRONTEND_URL = 'http://localhost:3001'
+    # Localhost-only URL configuration
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3001')
+    GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:5001/api/auth/google/callback')
+    GOOGLE_LOGIN_REDIRECT_URI = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', 'http://localhost:5001/api/auth/google/login-callback')
 
-    _g_login_redir = os.getenv('GOOGLE_LOGIN_REDIRECT_URI', '').rstrip('/')
-    if _g_login_redir:
-        GOOGLE_LOGIN_REDIRECT_URI = _g_login_redir
-    elif _is_render:
-        GOOGLE_LOGIN_REDIRECT_URI = f"{_render_url}/api/auth/google/login-callback"
-    else:
-        GOOGLE_LOGIN_REDIRECT_URI = 'http://localhost:5001/api/auth/google/login-callback'
-
-    _g_redir = os.getenv('GOOGLE_REDIRECT_URI', '').rstrip('/')
-    if _g_redir:
-        GOOGLE_REDIRECT_URI = _g_redir
-    elif _is_render:
-        GOOGLE_REDIRECT_URI = f"{_render_url}/api/auth/google/callback"
-    else:
-        GOOGLE_REDIRECT_URI = 'http://localhost:5001/api/auth/google/callback'
-    
     MODEL_DIR = os.path.join(BASE_DIR, 'model')
 
     # SMTP Email Sending
     SMTP_EMAIL = os.getenv('SMTP_EMAIL', '')
     SMTP_APP_PASSWORD = os.getenv('SMTP_APP_PASSWORD', '')
     SMTP_HOST = 'smtp.gmail.com'
-    SMTP_PORT = 465   # SSL (port 465) — more reliable than STARTTLS (587) behind firewalls
+    SMTP_PORT = 465   # SSL port

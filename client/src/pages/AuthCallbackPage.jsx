@@ -12,28 +12,39 @@ export default function AuthCallbackPage() {
   const navigate = useNavigate();
   const { setTokenAndUser } = useAuth();
   const [status, setStatus] = useState('Completing sign-in...');
-  const [syncMsg, setSyncMsg] = useState('');
+  const [syncMsg, setSyncMsg] = useState('Setting up your workspace...');
   const [isError, setIsError] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const pollRef = useRef(null);
+  const isProcessedRef = useRef(false);
 
   useEffect(() => {
+    if (isProcessedRef.current) return;
+
     const searchParams = new URLSearchParams(window.location.search);
     const errorParam = searchParams.get('error');
     const token = searchParams.get('token');
     const userStr = searchParams.get('user');
 
-    // Strip params from URL bar immediately (remove token from browser history/address bar)
-    window.history.replaceState(null, '', window.location.pathname);
-
     if (errorParam) {
+      isProcessedRef.current = true;
       setIsError(true);
       setErrorMsg(decodeURIComponent(errorParam));
+      window.history.replaceState(null, '', window.location.pathname);
       setTimeout(() => navigate('/login', { replace: true }), 3000);
       return;
     }
 
     if (!token || !userStr) {
+      // Check if already authenticated from a previous cycle / local storage
+      const existingToken = localStorage.getItem('token');
+      const existingUser = localStorage.getItem('user');
+      if (existingToken && existingUser) {
+        isProcessedRef.current = true;
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+
+      isProcessedRef.current = true;
       setIsError(true);
       setErrorMsg('No sign-in data received. Please try again.');
       setTimeout(() => navigate('/login', { replace: true }), 3000);
@@ -41,56 +52,31 @@ export default function AuthCallbackPage() {
     }
 
     try {
+      isProcessedRef.current = true;
       const user = JSON.parse(userStr);
 
       if (!user || !user.id) {
         setIsError(true);
-        setErrorMsg('Invalid user data. Please try again.');
+        setErrorMsg('Invalid user profile data. Please try again.');
         setTimeout(() => navigate('/login', { replace: true }), 3000);
         return;
       }
 
-      // Store token in React context AND localStorage
+      // Store token and user data in context and localStorage
       setTokenAndUser(token, user);
       sessionStorage.removeItem('google_login_pending');
-      // Clear any old sync-done flag so the inbox knows to wait
-      sessionStorage.removeItem('gmail_sync_done');
+      sessionStorage.setItem('gmail_sync_done', '1');
+
+      // Strip query parameters from URL bar for clean UX
+      window.history.replaceState(null, '', window.location.pathname);
 
       setStatus(`Welcome, ${user.name || user.email}!`);
-      setSyncMsg('Importing your Gmail messages in the background...');
+      setSyncMsg('Redirecting to your dashboard...');
 
-      // Poll sync-status every 3 seconds until live Gmail sync is complete
-      let elapsed = 0;
-      pollRef.current = setInterval(async () => {
-        elapsed += 3;
-        try {
-          const res = await API.get('/emails/sync-status', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const { sync_done, total_emails, live_emails, sim_emails } = res.data;
-          if (sync_done || live_emails > 0) {
-            clearInterval(pollRef.current);
-            // Signal InboxPage to reload emails
-            sessionStorage.setItem('gmail_sync_done', '1');
-            setSyncMsg(`✅ ${live_emails} Gmail messages imported!`);
-            setTimeout(() => navigate('/dashboard', { replace: true }), 800);
-          } else if (elapsed >= 180) {
-            // After 3 minutes give up polling and just navigate
-            clearInterval(pollRef.current);
-            sessionStorage.setItem('gmail_sync_done', '1');
-            navigate('/dashboard', { replace: true });
-          } else {
-            const secs = Math.round(elapsed);
-            setSyncMsg(`Syncing your Gmail... (${secs}s) — ${total_emails} emails found so far`);
-          }
-        } catch (pollErr) {
-          // Network error during poll — just navigate after short delay
-          if (elapsed >= 15) {
-            clearInterval(pollRef.current);
-            navigate('/dashboard', { replace: true });
-          }
-        }
-      }, 3000);
+      // Seamless transition to Dashboard
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 700);
 
     } catch (err) {
       console.error('[AuthCallback] Parse error:', err);
@@ -98,11 +84,7 @@ export default function AuthCallbackPage() {
       setErrorMsg('Failed to process sign-in data. Please try again.');
       setTimeout(() => navigate('/login', { replace: true }), 3000);
     }
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
+  }, [navigate, setTokenAndUser]);
 
   return (
     <div style={{

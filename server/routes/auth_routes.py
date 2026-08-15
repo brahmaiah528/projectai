@@ -135,16 +135,21 @@ def logout(current_user):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
-    name = data.get('name')
-    email = data.get('email')
+    name = (data.get('name') or '').strip()
+    email = (data.get('email') or '').lower().strip()
     password = data.get('password')
     if not name or not email or not password:
         return jsonify({'message': 'Name, email, and password are required.'}), 400
-    email = email.lower().strip()
+
+    import re
+    email_pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    if not re.match(email_pattern, email):
+        return jsonify({'message': 'Please provide a valid email address.'}), 400
+
     if User.query.filter_by(email=email).first():
         return jsonify({'message': 'An account with this email already exists.'}), 400
     user = User(
-        name=name.strip(), email=email, role='user',
+        name=name, email=email, role='user',
         avatar_url=f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}&background=0D8ABC&color=fff"
     )
     user.set_password(password)
@@ -282,7 +287,7 @@ def google_callback():
             error_msg = str(e)
             print(f"[Google OAuth Error] {error_msg}")
 
-    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai-iota.vercel.app').rstrip('/')
+    frontend_url = (current_app.config.get('FRONTEND_URL') or 'http://localhost:3001').rstrip('/')
 
     import urllib.parse
     if jwt_token and user_data:
@@ -382,7 +387,7 @@ def google_login_callback():
             error_msg = str(e)
             print(f"[Google Login Error] {error_msg}")
 
-    frontend_url = current_app.config.get('FRONTEND_URL', 'https://projectai-iota.vercel.app').rstrip('/')
+    frontend_url = (current_app.config.get('FRONTEND_URL') or 'http://localhost:3001').rstrip('/')
 
     import urllib.parse
     if jwt_token and user_data:

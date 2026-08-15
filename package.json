@@ -6,6 +6,8 @@
   "scripts": {
     "start": "python server/app.py",
     "train": "python model/train_model.py",
+    "db:init": "python server/init_db.py",
+    "db:reset": "python server/init_db.py --reset",
     "client:install": "cd client && npm install",
     "client:start": "cd client && npm run dev",
     "client:build": "cd client && npm run build"
