@@ -36,7 +36,7 @@ from sqlalchemy.engine import Engine
 def set_sqlite_pragma(dbapi_connection, connection_record):
     try:
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA journal_mode=DELETE")
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -216,6 +216,22 @@ def migrate_simulation_email_categories():
                 seeded = seed_emails_from_data(user.id, sim_data, source="simulation")
                 fixed_count += 1
                 print(f"[Migration] Ensured {seeded} emails for {user.email} (had {total_emails} before)")
+
+        # Ensure incoming bank alerts, admission notices, or lottery spam are never in 'sent'
+        misplaced_sent = Email.query.filter(
+            Email.folder == 'sent',
+            (Email.category.in_(['Banking', 'Examinations', 'Promotions'])) |
+            (Email.subject.ilike('%Welcome to%')) |
+            (Email.subject.ilike('%Account Statement%')) |
+            (Email.subject.ilike('%Admission Confirmation%')) |
+            (Email.subject.ilike('%Won a Free%')) |
+            (Email.subject.ilike('%lotery%'))
+        ).all()
+        for e in misplaced_sent:
+            e.folder = 'inbox'
+        if misplaced_sent:
+            db.session.commit()
+            print(f"[Migration] Cleaned up {len(misplaced_sent)} misplaced emails from 'sent' to 'inbox'.")
 
         if fixed_count > 0:
             print(f"[Migration] [OK] Ensured full simulation email set for {fixed_count} user(s).")

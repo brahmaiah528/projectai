@@ -45,9 +45,7 @@ export default function Sidebar({
 
   const handleSelectFolder = (folderId) => {
     setActiveFolder(folderId);
-    if (folderId === 'trash') {
-      setActiveCategory('All');
-    }
+    setActiveCategory('All'); // Always reset category filter to 'All' when navigating to a specific folder (e.g. Sent Mail)
     if (!isInboxPage) {
       navigate('/inbox');
     }
