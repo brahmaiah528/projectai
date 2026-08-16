@@ -42,6 +42,8 @@ class Email(db.Model):
     __table_args__ = (
         # Composite index for the most common query: user + folder + date sort
         db.Index('ix_emails_user_folder_date', 'user_id', 'folder', 'date'),
+        # Composite index for category filter queries (user + category + date)
+        db.Index('ix_emails_user_category_date', 'user_id', 'category', 'date'),
     )
     
     id = db.Column(db.Integer, primary_key=True)

@@ -27,10 +27,22 @@ export default function AnalyticsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-emerald-600/20 border-t-emerald-600 rounded-full animate-spin" />
-          <p className="text-sm font-medium text-slate-500">Loading ML Performance Benchmarks...</p>
+      <div className="space-y-6">
+        <div className="glass-card p-6 animate-pulse bg-gradient-to-r from-emerald-900/90 via-slate-900 to-teal-950">
+          <div className="h-6 w-64 rounded bg-emerald-800/60 mb-2" />
+          <div className="h-4 w-96 rounded bg-emerald-800/40" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {Array.from({length: 3}).map((_, i) => (
+            <div key={i} className="glass-card p-5 animate-pulse">
+              <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-800 mb-3" />
+              <div className="h-8 w-20 rounded bg-slate-200 dark:bg-slate-800" />
+            </div>
+          ))}
+        </div>
+        <div className="glass-card p-6 animate-pulse">
+          <div className="h-4 w-40 rounded bg-slate-200 dark:bg-slate-800 mb-4" />
+          <div className="h-64 rounded-xl bg-slate-100 dark:bg-slate-900" />
         </div>
       </div>
     );

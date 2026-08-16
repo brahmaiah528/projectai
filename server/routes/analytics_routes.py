@@ -5,16 +5,26 @@ from middleware import token_required
 from services.ml_service import ml_service, CATEGORIES
 from sqlalchemy import func, case
 from datetime import datetime, timedelta
+import time as _time
 
 from routes.email_routes import ensure_user_emails_exist
 
 analytics_bp = Blueprint('analytics', __name__)
+
+# In-memory dashboard cache: user_id -> (timestamp, data)
+_dashboard_cache = {}
+_DASHBOARD_CACHE_TTL = 30  # seconds — refresh every 30s max
 
 @analytics_bp.route('/dashboard', methods=['GET'])
 @token_required
 def get_dashboard_stats(current_user):
     user_id = current_user.id
     ensure_user_emails_exist(user_id)
+
+    # Serve from cache if fresh (< 30s old) — instant 0ms response
+    cached = _dashboard_cache.get(user_id)
+    if cached and (_time.monotonic() - cached[0]) < _DASHBOARD_CACHE_TTL:
+        return jsonify(cached[1]), 200
     
     # 1. Single query for all category counts
     cat_counts_query = db.session.query(
@@ -61,7 +71,7 @@ def get_dashboard_stats(current_user):
     avg_conf_row = db.session.query(func.avg(Email.confidence)).filter(Email.user_id == user_id).first()
     avg_confidence = round(float(avg_conf_row[0] or 0.94) * 100, 1)
 
-    return jsonify({
+    result_data = {
         "summary": {
             "total": total_emails,
             "immediate_reply": category_counts["Immediate Reply"],
@@ -82,7 +92,9 @@ def get_dashboard_stats(current_user):
         "category_pie": category_pie,
         "daily_stats": daily_stats,
         "recent_emails": [e.to_dict() for e in recent]
-    }), 200
+    }
+    _dashboard_cache[user_id] = (_time.monotonic(), result_data)
+    return jsonify(result_data), 200
 
 @analytics_bp.route('/models', methods=['GET'])
 @token_required

@@ -19,8 +19,6 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: http://localhost:5001
     container_name: email_classifier_frontend
     ports:
       - "3001:80"

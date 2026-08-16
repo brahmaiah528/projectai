@@ -19,16 +19,23 @@ export default function Navbar({ searchQuery, setSearchQuery, onSyncComplete, to
     setIsSyncing(true);
     setSyncMsg('');
     try {
-      const res = await API.post('/emails/sync');
-      const count = res.data.synced_count || 0;
-      const src = res.data.source || '';
-      setSyncMsg(count > 0 ? `✓ ${count} total emails synced from Gmail` : `✓ Already up to date`);
-      if (onSyncComplete) onSyncComplete(count);
+      const res = await API.post('/emails/delta-sync');
+      const changes = res.data.changes || 0;
+      setSyncMsg(changes > 0 ? `✓ ${changes} Gmail change(s) synced!` : `✓ In sync with Gmail`);
+      if (onSyncComplete) onSyncComplete(changes);
+      // Dispatch custom event so any active page refreshes immediately
+      window.dispatchEvent(new CustomEvent('gmail-synced'));
       setTimeout(() => setSyncMsg(''), 4000);
     } catch (err) {
-      console.error("Sync failed:", err);
-      setSyncMsg('⚠ Sync failed');
-      setTimeout(() => setSyncMsg(''), 3000);
+      try {
+        const fullRes = await API.post('/emails/sync');
+        setSyncMsg('✓ Full Gmail sync triggered');
+        window.dispatchEvent(new CustomEvent('gmail-synced'));
+        setTimeout(() => setSyncMsg(''), 4000);
+      } catch (e) {
+        setSyncMsg('⚠ Sync failed');
+        setTimeout(() => setSyncMsg(''), 3000);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -159,8 +166,11 @@ export default function Navbar({ searchQuery, setSearchQuery, onSyncComplete, to
               )}
 
               <button
-                onClick={logout}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors mt-1"
+                onClick={() => {
+                  setShowUserDropdown(false);
+                  logout();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors mt-1 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Sign Out</span>

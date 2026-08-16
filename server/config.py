@@ -19,11 +19,9 @@ class Config:
             _custom_db = _custom_db.replace('postgres://', 'postgresql://', 1)
         SQLALCHEMY_DATABASE_URI = _custom_db
     else:
-        # Absolute Unix paths starting with '/' need 4 slashes in SQLAlchemy SQLite URI
-        if _db_path.startswith('/'):
-            SQLALCHEMY_DATABASE_URI = f"sqlite:////{_db_path.lstrip('/')}"
-        else:
-            SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
+        # sqlite:////absolute/path/to/db  (4 slashes = absolute path on Unix/Linux)
+        # sqlite:///relative/path/to/db   (3 slashes = relative path on Windows)
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{_db_path}"
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -32,28 +30,11 @@ class Config:
     # WAL allows one writer + multiple readers simultaneously.
     # NullPool avoids cross-thread connection reuse issues in Flask dev server.
     if not (_custom_db and not _custom_db.startswith('sqlite')):
-        db_file_path = _db_path
-        def _sqlite_creator(path=db_file_path):
-            conn = sqlite3.connect(
-                path,
-                timeout=60,           # wait up to 60s before raising OperationalError
-                check_same_thread=False
-            )
-            # WAL mode: one writer + multiple readers simultaneously — eliminates most locks
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.execute("PRAGMA foreign_keys=ON")
-            # Slightly relax fsync for performance (safe: WAL already protects integrity)
-            conn.execute("PRAGMA synchronous=NORMAL")
-            # Bigger page cache = fewer disk reads
-            conn.execute("PRAGMA cache_size=-32000")  # ~32MB cache
-            conn.commit()
-            return conn
-
-        from sqlalchemy.pool import NullPool
         SQLALCHEMY_ENGINE_OPTIONS = {
-            'poolclass': NullPool,
-            'creator': _sqlite_creator,
+            'connect_args': {
+                'timeout': 60,
+                'check_same_thread': False
+            }
         }
     else:
         # For Postgres / other production DBs — use standard connection pool

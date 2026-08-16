@@ -18,9 +18,10 @@ import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
 
 function ProtectedRoute({ children, adminOnly = false }) {
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { isAuthenticated, user, isLoading, token } = useAuth();
 
-  if (isLoading) {
+  // Still verifying — show spinner (but only if we actually have a token; no token = go to login)
+  if (isLoading && token) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
         <div className="flex flex-col items-center gap-3">
@@ -84,7 +85,9 @@ function MainLayout() {
               element={
                 <InboxPage 
                   activeFolder={activeFolder}
+                  setActiveFolder={setActiveFolder}
                   activeCategory={activeCategory}
+                  setActiveCategory={setActiveCategory}
                   searchQuery={searchQuery}
                 />
               } 
@@ -94,7 +97,9 @@ function MainLayout() {
               element={
                 <InboxPage 
                   activeFolder={activeFolder}
+                  setActiveFolder={setActiveFolder}
                   activeCategory={activeCategory}
+                  setActiveCategory={setActiveCategory}
                   searchQuery={searchQuery}
                 />
               } 

@@ -3,8 +3,9 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Inbox, Star, Send, FileText, AlertOctagon, Trash2, 
   LayoutDashboard, Cpu, BarChart3, User, Shield, Tag, X, Mail, Plus,
-  Clock, Bookmark
+  Clock, Bookmark, LogOut
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import ComposeModal from './ComposeModal';
 
 const FOLDERS = [
@@ -36,6 +37,7 @@ export default function Sidebar({
   unreadCount = 0,
   isAdmin = false 
 }) {
+  const { logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isInboxPage = location.pathname === '/' || location.pathname === '/inbox';
@@ -260,6 +262,17 @@ export default function Sidebar({
               <span>Admin Management</span>
             </NavLink>
           )}
+
+          <button
+            onClick={() => {
+              onClose();
+              logout();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
+          </button>
         </div>
       </aside>
 

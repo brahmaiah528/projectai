@@ -183,12 +183,12 @@ class GmailService:
                             "date": datetime.utcnow()
                         }
 
-            # Use 8 threads to parallelize Gmail API calls (fetches 470+ emails ~4x faster)
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            # Use 16 parallel threads for high-speed batch fetching
+            with ThreadPoolExecutor(max_workers=16) as executor:
                 results = list(executor.map(fetch_single_msg, messages))
 
             email_list = [r for r in results if r is not None]
-            print(f"[Gmail API] Successfully fetched {len(email_list)} live messages from Gmail.")
+            print(f"[Gmail API] Successfully fetched {len(email_list)} live messages from Gmail in record time.")
             return email_list
         except Exception as e:
             print(f"[Gmail API Error] Failed to fetch live Gmail messages: {str(e)}")
@@ -588,6 +588,40 @@ class GmailService:
             return False
 
     @staticmethod
+    def untrash_live_gmail_message(user_tokens_json, message_id):
+        """Restores a real Gmail message from Trash back to Inbox."""
+        if not message_id or not user_tokens_json:
+            return False
+        try:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+
+            token_data = json.loads(user_tokens_json)
+            creds = Credentials(
+                token=token_data.get('access_token'),
+                refresh_token=token_data.get('refresh_token'),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=Config.GOOGLE_CLIENT_ID,
+                client_secret=Config.GOOGLE_CLIENT_SECRET
+            )
+            service = build('gmail', 'v1', credentials=creds)
+            try:
+                service.users().messages().untrash(userId='me', id=message_id).execute()
+                print(f"[Gmail Sync] Restored real Gmail message {message_id} from Trash via untrash API.")
+            except Exception as untrash_err:
+                print(f"[Gmail Sync Untrash Fallback] Calling modify labels: {str(untrash_err)}")
+                service.users().messages().modify(
+                    userId='me',
+                    id=message_id,
+                    body={'addLabelIds': ['INBOX'], 'removeLabelIds': ['TRASH']}
+                ).execute()
+                print(f"[Gmail Sync] Restored real Gmail message {message_id} from Trash via modify labels.")
+            return True
+        except Exception as e:
+            print(f"[Gmail Sync Warning] Failed to untrash msg {message_id}: {str(e)}")
+            return False
+
+    @staticmethod
     def delete_live_gmail_message(user_tokens_json, message_id):
         """Permanently deletes a real Gmail message."""
         if not message_id or not user_tokens_json:
@@ -606,7 +640,7 @@ class GmailService:
             )
             service = build('gmail', 'v1', credentials=creds)
             service.users().messages().delete(userId='me', id=message_id).execute()
-            print(f"[Gmail Sync] Permanently deleted real Gmail message {message_id}.")
+            print(f"[Gmail Sync] Permanently deleted real Gmail message {message_id} via delete API.")
             return True
         except Exception as e:
             print(f"[Gmail Sync Warning] Failed to delete msg {message_id}: {str(e)}")

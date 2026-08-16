@@ -17,6 +17,12 @@ CATEGORIES = [
 class MLService:
     _instance = None
 
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = MLService()
+        return cls._instance
+
     def __init__(self):
         self.vectorizer = None
         self.char_vectorizer = None
@@ -26,6 +32,64 @@ class MLService:
         self.ovr_models = {}
         self.metrics = {}
         self.load_models()
+        MLService._instance = self
+
+    def classify_batch(self, items):
+        """Classifies a list of email dicts in high-speed vectorized batch mode."""
+        if not items:
+            return []
+
+        results = []
+        texts = []
+        for item in items:
+            sub = item.get('subject', '') if isinstance(item, dict) else item[0]
+            bod = item.get('body', '') if isinstance(item, dict) else item[1]
+            texts.append(f"{sub} {bod}".strip())
+
+        try:
+            from scipy.sparse import hstack as sp_hstack
+            word_vecs = self.vectorizer.transform(texts) if self.vectorizer else None
+            char_vecs = self.char_vectorizer.transform(texts) if self.char_vectorizer else None
+            
+            if word_vecs is not None and char_vecs is not None:
+                combined_vecs = sp_hstack([word_vecs, char_vecs])
+            elif word_vecs is not None:
+                combined_vecs = word_vecs
+            else:
+                combined_vecs = None
+
+            if self.classifier is not None and combined_vecs is not None:
+                if hasattr(self.classifier, "predict_proba"):
+                    probs = self.classifier.predict_proba(combined_vecs)
+                    classes = self.classifier.classes_
+                    for p_row in probs:
+                        top_idx = int(np.argmax(p_row))
+                        top_cat = classes[top_idx]
+                        conf = float(p_row[top_idx])
+                        results.append({
+                            'category': top_cat,
+                            'confidence': round(conf, 4)
+                        })
+                else:
+                    preds = self.classifier.predict(combined_vecs)
+                    for pred in preds:
+                        results.append({
+                            'category': pred,
+                            'confidence': 0.95
+                        })
+                if len(results) == len(items):
+                    return results
+        except Exception as e:
+            print(f"[MLService Batch Error] {e}")
+
+        # Fallback to individual classify if batch failed
+        results = []
+        for item in items:
+            sub = item.get('subject', '') if isinstance(item, dict) else item[0]
+            bod = item.get('body', '') if isinstance(item, dict) else item[1]
+            res = self.classify_email(sub, bod)
+            results.append(res)
+        return results
 
     def load_models(self):
         try:

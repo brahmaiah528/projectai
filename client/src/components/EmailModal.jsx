@@ -198,68 +198,25 @@ export default function EmailModal({ email, onClose, onToggleStar, onToggleRead,
 }
 
 function EmailBodyRenderer({ rawBody }) {
-  const iframeRef = React.useRef(null);
-  const [iframeHeight, setIframeHeight] = React.useState(500);
+  if (!rawBody || !rawBody.trim()) {
+    return (
+      <div className="p-6 text-slate-400 italic text-sm text-center">
+        No content in this message.
+      </div>
+    );
+  }
 
-  React.useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe || !rawBody) return;
-
-    let html = rawBody;
-
-    // Unescape double-encoded HTML entities (e.g. &lt;div&gt; → <div>)
-    if (html.includes('&lt;') || html.includes('&gt;')) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.innerHTML = html;
-        html = ta.value;
-        if (html.includes('&lt;')) { ta.innerHTML = html; html = ta.value; }
-      } catch (_) {}
-    }
-
-    // If it's not HTML at all, skip iframe
-    if (!/<[a-z]/i.test(html)) return;
-
-    // If it's a fragment (no <html> tag), wrap it
-    if (!/<html/i.test(html)) {
-      html = `<!DOCTYPE html><html><head>
-        <meta charset="utf-8"/>
-        <meta name="viewport" content="width=device-width,initial-scale=1"/>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                 color: #1e293b; margin: 0; padding: 16px; font-size: 14px; line-height: 1.6; background: #fff; }
-          img  { max-width: 100% !important; height: auto !important; display: block; margin: 8px 0; }
-          table { max-width: 100% !important; }
-          a { color: #2563eb; }
-        </style>
-      </head><body>${html}</body></html>`;
-    }
-
-    // Write HTML directly into iframe document — most reliable rendering method
+  let html = rawBody;
+  if (html.includes('&lt;') || html.includes('&gt;')) {
     try {
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      doc.open('text/html', 'replace');
-      doc.write(html);
-      doc.close();
+      const ta = document.createElement('textarea');
+      ta.innerHTML = html;
+      html = ta.value;
+      if (html.includes('&lt;')) { ta.innerHTML = html; html = ta.value; }
+    } catch (_) {}
+  }
 
-      // Auto-resize after content loads
-      const resize = () => {
-        try {
-          const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
-          if (h > 0) setIframeHeight(h + 32);
-        } catch (_) {}
-      };
-      iframe.onload = resize;
-      setTimeout(resize, 300);
-    } catch (e) {
-      console.warn('iframe write error', e);
-    }
-  }, [rawBody]);
-
-  // Plain text fallback (no HTML tags at all)
-  if (!rawBody) return <p className="text-slate-400 italic p-4">No content.</p>;
-
-  const looksLikeHtml = /<[a-z]/i.test(rawBody) || rawBody.includes('&lt;');
+  const looksLikeHtml = /<[a-z]/i.test(html);
 
   if (!looksLikeHtml) {
     return (
@@ -269,13 +226,25 @@ function EmailBodyRenderer({ rawBody }) {
     );
   }
 
+  const fullHtmlDoc = /<html/i.test(html) ? html : `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+             color: #1e293b; margin: 0; padding: 16px; font-size: 14px; line-height: 1.6; background: #fff; }
+      img  { max-width: 100% !important; height: auto !important; display: block; margin: 8px 0; }
+      table { max-width: 100% !important; }
+      a { color: #2563eb; }
+    </style>
+  </head><body>${html}</body></html>`;
+
   return (
     <iframe
-      ref={iframeRef}
+      srcDoc={fullHtmlDoc}
       title="Email Preview"
-      className="w-full border-0 bg-white"
-      style={{ height: iframeHeight + 'px', minHeight: '420px', display: 'block' }}
-      sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+      className="w-full border-0 bg-white block min-h-[420px]"
+      style={{ minHeight: '420px', width: '100%' }}
+      sandbox="allow-popups"
     />
   );
 }

@@ -43,9 +43,19 @@ export default function LoginPage() {
     // Note: no finally — we want the spinner to stay on while redirecting
   };
 
-  const handleQuickLogin = (demoEmail, demoPass) => {
+  const handleQuickLogin = async (demoEmail, demoPass) => {
     setEmail(demoEmail);
     setPassword(demoPass);
+    setError('');
+    setIsLoading(true);
+    try {
+      await login(demoEmail, demoPass, true);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to sign in. Please check credentials.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -168,13 +178,22 @@ export default function LoginPage() {
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
             Quick Demo Sign-in
           </p>
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-3">
             <button
+              type="button"
               onClick={() => handleQuickLogin('user@gmail.com', 'user123')}
-              className="px-4 py-2 text-xs font-medium bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/60 rounded-xl transition-all flex items-center justify-center gap-1.5"
+              className="px-3.5 py-2 text-xs font-medium bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/60 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs hover:border-emerald-500/40"
             >
               <User className="w-3.5 h-3.5 text-emerald-400" />
               <span>Demo User</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickLogin('admin@gmail.com', 'admin123')}
+              className="px-3.5 py-2 text-xs font-medium bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/60 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs hover:border-blue-500/40"
+            >
+              <Shield className="w-3.5 h-3.5 text-blue-400" />
+              <span>Admin</span>
             </button>
           </div>
         </div>

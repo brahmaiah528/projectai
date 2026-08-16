@@ -54,14 +54,12 @@ def token_required(f):
                 print(f"[Auth Middleware] User ID {data.get('user_id')} not found in database!")
                 return jsonify({'message': 'User associated with token not found!'}), 401
         except jwt.ExpiredSignatureError:
-            print("[Auth Middleware] JWT token has expired!")
             return jsonify({'message': 'Token has expired! Please log in again.'}), 401
         except jwt.InvalidTokenError as e:
-            print(f"[Auth Middleware] Invalid JWT token: {str(e)}")
-            return jsonify({'message': 'Invalid token!', 'error': str(e)}), 401
+            return jsonify({'message': 'Invalid token! Please log in again.', 'error': str(e)}), 401
         except Exception as e:
-            print(f"[Auth Middleware Internal Error] {type(e).__name__}: {str(e)}")
-            return jsonify({'message': 'Internal authentication error', 'error': str(e)}), 500
+            print(f"[Auth Middleware] Error verifying token: {str(e)}")
+            return jsonify({'message': 'Authentication failed! Please log in again.', 'error': str(e)}), 401
             
         return f(current_user, *args, **kwargs)
     return decorated

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import API from '../services/api';
 import CategoryBadge, { PriorityActionBadge } from '../components/CategoryBadge';
 import { 
   Star, Mail, MailOpen, Trash2, CheckSquare, Square, 
   ArrowUpDown, Filter, Inbox, AlertCircle,
   ArrowLeft, Calendar, User, Cpu, ShieldCheck, RotateCcw,
-  Clock, Bookmark, BookmarkCheck, Bell, BellOff, X, RefreshCw
+  Clock, Bookmark, BookmarkCheck, Bell, BellOff, X, RefreshCw,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 /** Strip HTML tags and return clean readable text */
@@ -22,61 +23,26 @@ function stripHtml(html) {
 
 /** Renders HTML email body visually inside a sandboxed iframe */
 function EmailBodyRenderer({ rawBody }) {
-  const iframeRef = useRef(null);
-  const [iframeHeight, setIframeHeight] = useState(480);
+  if (!rawBody || !rawBody.trim()) {
+    return (
+      <div className="p-6 text-slate-400 italic text-sm bg-slate-50 dark:bg-slate-900/40 rounded-xl m-4 border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2">
+        <AlertCircle className="w-4 h-4 text-slate-400" />
+        <span>No detailed HTML body content in this message.</span>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe || !rawBody) return;
-
-    let html = rawBody;
-
-    if (html.includes('&lt;') || html.includes('&gt;')) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.innerHTML = html;
-        html = ta.value;
-        if (html.includes('&lt;')) { ta.innerHTML = html; html = ta.value; }
-      } catch (_) {}
-    }
-
-    if (!/\<html/i.test(html)) {
-      html = `<!DOCTYPE html><html><head>
-        <meta charset="utf-8"/>
-        <meta name="viewport" content="width=device-width,initial-scale=1"/>
-        <style>
-          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1e293b;margin:0;padding:16px;font-size:14px;line-height:1.6;background:#fff;}
-          img{max-width:100%!important;height:auto!important;display:block;margin:8px 0;}
-          table{max-width:100%!important;}
-          a{color:#2563eb;}
-        </style>
-      </head><body>${html}</body></html>`;
-    }
-
+  let html = rawBody;
+  if (html.includes('&lt;') || html.includes('&gt;')) {
     try {
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      doc.open('text/html', 'replace');
-      doc.write(html);
-      doc.close();
-      const resize = () => {
-        try {
-          const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
-          if (h > 100) setIframeHeight(h + 40);
-        } catch (_) {}
-      };
-      setTimeout(resize, 200);
-      setTimeout(resize, 800);
-    } catch (e) { console.warn('iframe write error', e); }
-  }, [rawBody]);
+      const ta = document.createElement('textarea');
+      ta.innerHTML = html;
+      html = ta.value;
+      if (html.includes('&lt;')) { ta.innerHTML = html; html = ta.value; }
+    } catch (_) {}
+  }
 
-  if (!rawBody || !rawBody.trim()) return (
-    <div className="p-6 text-slate-400 italic text-sm bg-slate-50 dark:bg-slate-900/40 rounded-xl m-4 border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2">
-      <AlertCircle className="w-4 h-4 text-slate-400" />
-      <span>No detailed HTML body content in this message.</span>
-    </div>
-  );
-
-  const isHtml = /\<[a-z]/i.test(rawBody) || rawBody.includes('&lt;');
+  const isHtml = /\<[a-z]/i.test(html);
   if (!isHtml) {
     return (
       <div className="whitespace-pre-wrap text-slate-800 dark:text-slate-200 leading-relaxed text-sm p-6">
@@ -85,13 +51,24 @@ function EmailBodyRenderer({ rawBody }) {
     );
   }
 
+  const fullHtmlDoc = /\<html/i.test(html) ? html : `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1e293b;margin:0;padding:16px;font-size:14px;line-height:1.6;background:#fff;}
+      img{max-width:100%!important;height:auto!important;display:block;margin:8px 0;}
+      table{max-width:100%!important;}
+      a{color:#2563eb;}
+    </style>
+  </head><body>${html}</body></html>`;
+
   return (
     <iframe
-      ref={iframeRef}
+      srcDoc={fullHtmlDoc}
       title="Email Preview"
-      className="w-full border-0 bg-white block"
-      style={{ height: iframeHeight + 'px', minHeight: '420px' }}
-      sandbox="allow-popups allow-same-origin allow-scripts"
+      className="w-full border-0 bg-white block min-h-[420px]"
+      style={{ minHeight: '420px', width: '100%' }}
+      sandbox="allow-popups"
     />
   );
 }
@@ -136,17 +113,42 @@ function SnoozePicker({ email, onSnooze, onClose }) {
   );
 }
 
-export default function InboxPage({ activeFolder, activeCategory, searchQuery }) {
+const ALL_CATEGORIES = [
+  'All', 'Immediate Reply', 'Banking', 'Jobs', 'Examinations', 'Purchases', 
+  'Promotions', 'Social', 'Personal', 'Updates', 'Office', 'Customer Support', 
+  'Bookings', 'Travel', 'Healthcare', 'Newsletters', 'Spam', 'Important', 'Others'
+];
+
+export default function InboxPage({ activeFolder, setActiveFolder, activeCategory, setActiveCategory, searchQuery }) {
   const [emails, setEmails] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeEmail, setActiveEmail] = useState(null);
   const [sortBy, setSortBy] = useState('date_desc');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 30;
   const [replyText, setReplyText] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [replySuccess, setReplySuccess] = useState(false);
   const [snoozePickerFor, setSnoozePickerFor] = useState(null); // email id
   const [isSyncing, setIsSyncing] = useState(false);
+  const categoryCacheRef = useRef({});
+  // Track which category the current `emails` array belongs to
+  // so we don't filter emails from a different category before the new fetch completes
+  const [loadedCategory, setLoadedCategory] = useState('All');
+  const [loadedFolder, setLoadedFolder] = useState('inbox');
+
+  // Only show filtered emails when the loaded data actually matches the active selection
+  // This prevents the "No messages found" flash when switching categories
+  const displayedEmails = useMemo(() => {
+    if (!emails || emails.length === 0) return [];
+    // If the emails we have belong to a different category/folder, don't filter — show loading
+    const categoryMatches = !activeCategory || activeCategory === 'All' || loadedCategory === activeCategory;
+    const folderMatches = loadedFolder === activeFolder;
+    if (!categoryMatches || !folderMatches) return null; // null = still loading
+    if (!activeCategory || activeCategory === 'All') return emails;
+    return emails.filter(e => (e.category || '').toLowerCase() === activeCategory.toLowerCase());
+  }, [emails, activeCategory, activeFolder, loadedCategory, loadedFolder]);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -187,26 +189,68 @@ export default function InboxPage({ activeFolder, activeCategory, searchQuery })
   };
 
   useEffect(() => {
-    fetchEmails();
+    setCurrentPage(1);
+    fetchEmails(emails.length > 0).then?.(() => {});
 
-    // Auto delta-sync with Gmail API every 30s — only fetches changed messages (fast, low quota usage)
-    const interval = setInterval(() => {
+    // After initial load, pre-fetch ALL categories silently in the background
+    // so every category switch is instant (served from cache, 0ms)
+    const prefetchTimer = setTimeout(() => {
+      prefetchAllCategories();
+    }, 1500); // 1.5s delay — let the main fetch settle first
+
+    const doDeltaSync = () => {
       API.post('/emails/delta-sync')
         .then((res) => {
           if (res.data?.changes > 0) {
-            // Only refetch UI if there were actual changes
+            // Instant refetch if changes were detected in Gmail
             fetchEmails(true);
           }
         })
         .catch(() => {});
-    }, 30000);
+    };
 
-    return () => clearInterval(interval);
+    // Auto delta-sync with Gmail API every 30 seconds for background mirroring
+    const interval = setInterval(doDeltaSync, 30000);
+
+    // Instant delta-sync when user returns / focuses the app tab from Gmail
+    const onFocus = () => doDeltaSync();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        doDeltaSync();
+      }
+    };
+    const onGmailSynced = () => fetchEmails(true);
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('gmail-synced', onGmailSynced);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('gmail-synced', onGmailSynced);
+      clearTimeout(prefetchTimer);
+    };
   }, [activeFolder, activeCategory, searchQuery, sortBy]);
 
 
   const fetchEmails = async (silent = false) => {
-    if (!silent) setIsLoading(true);
+    const cacheKey = `${activeFolder}_${activeCategory}_${searchQuery || ''}_${sortBy}`;
+    
+    // 1. Instant 0ms render from memory cache if available
+    if (categoryCacheRef.current[cacheKey]) {
+      setEmails(categoryCacheRef.current[cacheKey]);
+      setLoadedCategory(activeCategory || 'All');
+      setLoadedFolder(activeFolder);
+      setIsLoading(false);
+      return; // Cache hit — done, no need to fetch
+    } else if (!silent) {
+      // No cache — clear emails immediately so we show spinner not stale/wrong data
+      setEmails([]);
+      setIsLoading(true);
+    }
+
     try {
       const res = await API.get('/emails', {
         params: {
@@ -216,11 +260,39 @@ export default function InboxPage({ activeFolder, activeCategory, searchQuery })
           sort: sortBy
         }
       });
-      setEmails(res.data.emails || []);
+      const fetched = res.data?.emails || [];
+      categoryCacheRef.current[cacheKey] = fetched;
+      setEmails(fetched);
+      setLoadedCategory(activeCategory || 'All');
+      setLoadedFolder(activeFolder);
     } catch (err) {
       console.error("Failed to fetch emails:", err);
     } finally {
-      if (!silent) setIsLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  // Pre-fetch ALL categories in the background after initial load
+  // so every category switch is instant (0ms from cache)
+  const prefetchAllCategories = async () => {
+    const categories = [
+      'Immediate Reply', 'Banking', 'Jobs', 'Examinations', 'Purchases',
+      'Promotions', 'Social', 'Personal', 'Updates', 'Office',
+      'Customer Support', 'Bookings', 'Travel', 'Healthcare',
+      'Newsletters', 'Spam', 'Important', 'Others'
+    ];
+    for (const cat of categories) {
+      const cacheKey = `${activeFolder}_${cat}__${sortBy}`;
+      if (categoryCacheRef.current[cacheKey]) continue; // already cached
+      try {
+        const res = await API.get('/emails', {
+          params: { folder: activeFolder, category: cat, sort: sortBy }
+        });
+        const fetched = res.data?.emails || [];
+        categoryCacheRef.current[cacheKey] = fetched;
+      } catch (_) {}
+      // Small delay between each so we don't hammer the server
+      await new Promise(r => setTimeout(r, 80));
     }
   };
 
@@ -618,6 +690,31 @@ export default function InboxPage({ activeFolder, activeCategory, searchQuery })
         </div>
       )}
 
+      {/* Interactive Category Filter Pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {ALL_CATEGORIES.map((cat) => {
+          const isCurrent = (activeCategory || 'All') === cat;
+          return (
+            <button
+              key={cat}
+              onClick={() => {
+                if (setActiveCategory) setActiveCategory(cat);
+                if (cat !== 'All' && activeFolder !== 'trash' && setActiveFolder) {
+                  setActiveFolder('all');
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                isCurrent
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20 font-bold scale-[1.02]'
+                  : 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              <span>{cat}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Top Toolbar */}
       <div className="glass-card p-4 flex flex-wrap items-center justify-between gap-4">
         {/* Left: Bulk Actions */}
@@ -738,12 +835,12 @@ export default function InboxPage({ activeFolder, activeCategory, searchQuery })
       </div>
 
       {/* Email List View */}
-      {isLoading ? (
+      {isLoading || displayedEmails === null ? (
         <div className="glass-card p-12 flex flex-col items-center justify-center gap-3">
           <div className="w-8 h-8 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
-          <p className="text-xs text-slate-500">Loading classified emails...</p>
+          <p className="text-xs text-slate-500">Loading {activeCategory !== 'All' ? activeCategory : ''} emails...</p>
         </div>
-      ) : emails.length === 0 ? (
+      ) : displayedEmails.length === 0 ? (
         <div className="glass-card p-12 text-center space-y-3">
           <Inbox className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
           <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No Emails Found</h3>
@@ -752,139 +849,180 @@ export default function InboxPage({ activeFolder, activeCategory, searchQuery })
               ? 'No emails are currently snoozed. Use the clock icon on any email to snooze it.'
               : activeFolder === 'important'
               ? 'No emails marked as Important. Use the bookmark icon to mark emails as important.'
-              : `No emails match your current folder (${activeFolder}), category filter (${activeCategory}), or search query.`
+              : `No emails match your current category filter (${activeCategory || 'All'}) or folder (${activeFolder}).`
             }
           </p>
         </div>
       ) : (
-        <div className="glass-card overflow-hidden divide-y divide-slate-200/80 dark:divide-slate-800/80">
-          {emails.map((email) => {
-            const isSelected = selectedIds.includes(email.id);
-            return (
-              <div
-                key={email.id}
-                onClick={() => handleOpenEmail(email)}
-                className={`
-                  flex items-center gap-3 px-4 py-3 cursor-pointer transition-all duration-150 group hover:bg-blue-50/50 dark:hover:bg-slate-900/60
-                  ${!email.is_read ? 'bg-white dark:bg-slate-950 font-semibold' : 'bg-slate-50/40 dark:bg-slate-950/40 text-slate-600 dark:text-slate-400'}
-                  ${isSelected ? 'bg-blue-50 dark:bg-blue-950/40' : ''}
-                `}
-              >
-                {/* Select Checkbox */}
-                <button
-                  onClick={(e) => toggleSelectOne(email.id, e)}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
-                >
-                  {isSelected ? (
-                    <CheckSquare className="w-4 h-4 text-blue-600" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                </button>
+        (() => {
+          const totalCount = displayedEmails?.length || 0;
+          const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+          const safePage = Math.min(Math.max(1, currentPage), totalPages);
+          const paginatedEmails = (displayedEmails || []).slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-                {/* Star Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleStar(email.id, email.is_starred);
-                  }}
-                  className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 ${
-                    email.is_starred ? 'text-amber-500' : 'text-slate-300 dark:text-slate-700'
-                  }`}
-                >
-                  <Star className={`w-4 h-4 ${email.is_starred ? 'fill-amber-500' : ''}`} />
-                </button>
-
-                {/* Important Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleImportant(email.id, email.is_important);
-                  }}
-                  className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 ${
-                    email.is_important ? 'text-orange-500' : 'text-slate-300 dark:text-slate-700'
-                  }`}
-                  title={email.is_important ? "Important" : "Mark as Important"}
-                >
-                  <Bookmark className={`w-4 h-4 ${email.is_important ? 'fill-orange-500' : ''}`} />
-                </button>
-
-                {/* Category Badge & Priority Highlight */}
-                <div className="shrink-0 flex items-center gap-1.5">
-                  <CategoryBadge category={email.category} size="xs" />
-                  {email.priority_highlight && (
-                    <PriorityActionBadge highlight={email.priority_highlight} size="xs" />
-                  )}
-                </div>
-
-                {/* Sender Name */}
-                <div className="w-32 shrink-0 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
-                  {email.sender}
-                </div>
-
-                {/* Subject & Snippet Preview */}
-                <div className="flex-1 min-w-0 flex items-center gap-2 text-xs">
-                  <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                    {email.subject}
-                  </span>
-                  <span className="text-slate-400 truncate hidden md:inline">
-                    - {stripHtml(email.snippet || email.body).slice(0, 100)}
-                  </span>
-                </div>
-
-                {/* Right side: Snooze badge, Confidence, Date, Snooze btn, Open btn */}
-                <div className="flex items-center gap-2 shrink-0 text-xs">
-                  {/* Snooze badge */}
-                  {email.is_snoozed && (
-                    <span className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-600 text-[10px] font-bold">
-                      <Clock className="w-2.5 h-2.5" />
-                      {formatSnoozeLabel(email.snoozed_until)}
-                    </span>
-                  )}
-
-                  <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-blue-400">
-                    {email.confidence}%
-                  </span>
-                  <span className="text-slate-400 text-[11px]">
-                    {new Date(email.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  </span>
-
-                  {/* Snooze action button */}
-                  <div className="relative" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => setSnoozePickerFor(snoozePickerFor === email.id ? null : email.id)}
-                      className={`p-1.5 rounded-lg border transition-colors hidden group-hover:block ${
-                        email.is_snoozed
-                          ? 'bg-purple-500/10 border-purple-500/30 text-purple-500'
-                          : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                      title="Snooze"
+          return (
+            <div className="glass-card overflow-hidden">
+              <div className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
+                {paginatedEmails.map((email) => {
+                  const isSelected = selectedIds.includes(email.id);
+                  return (
+                    <div
+                      key={email.id}
+                      onClick={() => handleOpenEmail(email)}
+                      className={`
+                        flex items-center gap-3 px-4 py-3 cursor-pointer transition-all duration-150 group hover:bg-blue-50/50 dark:hover:bg-slate-900/60
+                        ${!email.is_read ? 'bg-white dark:bg-slate-950 font-semibold' : 'bg-slate-50/40 dark:bg-slate-950/40 text-slate-600 dark:text-slate-400'}
+                        ${isSelected ? 'bg-blue-50 dark:bg-blue-950/40' : ''}
+                      `}
                     >
-                      <Clock className="w-3.5 h-3.5" />
-                    </button>
-                    {snoozePickerFor === email.id && (
-                      <SnoozePicker
-                        email={email}
-                        onSnooze={handleSnooze}
-                        onClose={() => setSnoozePickerFor(null)}
-                      />
-                    )}
-                  </div>
+                      {/* Select Checkbox */}
+                      <button
+                        onClick={(e) => toggleSelectOne(email.id, e)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-blue-600" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenEmail(email);
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-lg transition-all"
-                  >
-                    Open
-                  </button>
-                </div>
+                      {/* Star Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleStar(email.id, email.is_starred);
+                        }}
+                        className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 ${
+                          email.is_starred ? 'text-amber-500' : 'text-slate-300 dark:text-slate-700'
+                        }`}
+                      >
+                        <Star className={`w-4 h-4 ${email.is_starred ? 'fill-amber-500' : ''}`} />
+                      </button>
+
+                      {/* Important Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleImportant(email.id, email.is_important);
+                        }}
+                        className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 ${
+                          email.is_important ? 'text-orange-500' : 'text-slate-300 dark:text-slate-700'
+                        }`}
+                        title={email.is_important ? "Important" : "Mark as Important"}
+                      >
+                        <Bookmark className={`w-4 h-4 ${email.is_important ? 'fill-orange-500' : ''}`} />
+                      </button>
+
+                      {/* Category Badge & Priority Highlight */}
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        <CategoryBadge category={email.category} size="xs" />
+                        {email.priority_highlight && (
+                          <PriorityActionBadge highlight={email.priority_highlight} size="xs" />
+                        )}
+                      </div>
+
+                      {/* Sender Name */}
+                      <div className="w-32 shrink-0 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        {email.sender}
+                      </div>
+
+                      {/* Subject & Snippet Preview */}
+                      <div className="flex-1 min-w-0 flex items-center gap-2 text-xs">
+                        <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
+                          {email.subject}
+                        </span>
+                        <span className="text-slate-400 truncate hidden md:inline">
+                          - {stripHtml(email.snippet || email.body).slice(0, 100)}
+                        </span>
+                      </div>
+
+                      {/* Right side: Snooze badge, Confidence, Date, Snooze btn, Open btn */}
+                      <div className="flex items-center gap-2 shrink-0 text-xs">
+                        {/* Snooze badge */}
+                        {email.is_snoozed && (
+                          <span className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-600 text-[10px] font-bold">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatSnoozeLabel(email.snoozed_until)}
+                          </span>
+                        )}
+
+                        <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                          {email.confidence}%
+                        </span>
+                        <span className="text-slate-400 text-[11px]">
+                          {new Date(email.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+
+                        {/* Snooze action button */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setSnoozePickerFor(snoozePickerFor === email.id ? null : email.id)}
+                            className={`p-1.5 rounded-lg border transition-colors hidden group-hover:block ${
+                              email.is_snoozed
+                                ? 'bg-purple-500/10 border-purple-500/30 text-purple-500'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            }`}
+                            title="Snooze"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </button>
+                          {snoozePickerFor === email.id && (
+                            <SnoozePicker
+                              email={email}
+                              onSnooze={handleSnooze}
+                              onClose={() => setSnoozePickerFor(null)}
+                            />
+                          )}
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEmail(email);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-lg transition-all"
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Pagination Bar */}
+              {totalCount > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/80 dark:bg-slate-900/80 border-t border-slate-200/80 dark:border-slate-800/80 text-xs">
+                  <span className="text-slate-500">
+                    Showing <strong className="text-slate-800 dark:text-slate-200">{(safePage - 1) * PAGE_SIZE + 1}</strong> to <strong className="text-slate-800 dark:text-slate-200">{Math.min(safePage * PAGE_SIZE, totalCount)}</strong> of <strong className="text-slate-800 dark:text-slate-200">{totalCount}</strong> emails
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={safePage === 1}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Prev</span>
+                    </button>
+                    <span className="px-2.5 py-1 font-semibold text-slate-700 dark:text-slate-300">
+                      Page {safePage} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={safePage >= totalPages}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 disabled:opacity-30 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()
       )}
     </div>
   );

@@ -19,7 +19,7 @@ _seed_locks = {}          # user_id -> threading.Lock()
 _seed_locks_mutex = threading.Lock()
 _seeded_users = set()     # user_ids already seeded
 _seeded_ts = {}           # user_id -> timestamp of last DB verify (float epoch seconds)
-_VERIFY_INTERVAL = 60.0   # Only re-verify DB count every 60 seconds
+_VERIFY_INTERVAL = 3600.0   # Only re-verify DB count every 1 hour (dramatically speeds up responses)
 _gmail_sync_done = set()  # user_ids whose live Gmail sync has completed successfully
 
 def _get_user_seed_lock(user_id):
@@ -37,11 +37,13 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
     count = 0
     try:
         with db.session.no_autoflush:
-            # 1. Fetch all existing message_ids for this user in ONE single query
-            existing_emails = {
-                e.message_id: e 
-                for e in Email.query.filter_by(user_id=user_id).all()
-            }
+            # 1. Fetch all existing emails for this user and index by BOTH message_id and gmail_message_id
+            existing_emails = {}
+            for e in Email.query.filter_by(user_id=user_id).all():
+                if e.message_id:
+                    existing_emails[e.message_id] = e
+                if e.gmail_message_id:
+                    existing_emails[e.gmail_message_id] = e
 
             emails_to_add = []
 
@@ -49,7 +51,6 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
                 original_folder = item.get('folder', 'inbox')
 
                 if source == "simulation" and item.get('category'):
-                    # Simulation emails come pre-labelled — no ML call needed
                     category = item['category']
                     if category == 'Spam' and original_folder == 'inbox':
                         folder = 'spam'
@@ -57,12 +58,9 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
                         folder = original_folder
                     confidence = 0.95
                 elif source == "live" and item.get('category'):
-                    # Live emails already classified (passed through classify_batch)
                     category = item['category']
                     confidence = item.get('confidence', 0.9)
-                    if original_folder in PRESERVE_FOLDERS:
-                        folder = original_folder
-                    elif category == 'Spam' and original_folder == 'inbox':
+                    if category == 'Spam' and original_folder == 'inbox':
                         folder = 'spam'
                     else:
                         folder = original_folder
@@ -70,35 +68,37 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
                     clf_result = ml_service.classify_email(item['subject'], item['body'])
                     category = clf_result['category']
                     confidence = clf_result['confidence']
-                    if original_folder in PRESERVE_FOLDERS:
-                        folder = original_folder
-                    elif category == 'Spam' and original_folder == 'inbox':
+                    if category == 'Spam' and original_folder == 'inbox':
                         folder = 'spam'
                     else:
                         folder = original_folder
 
                 msg_id = item['message_id']
-                if msg_id in existing_emails:
-                    existing = existing_emails[msg_id]
+                gmail_msg_id = item.get('gmail_message_id') or msg_id
+
+                existing = existing_emails.get(msg_id) or existing_emails.get(gmail_msg_id)
+
+                if existing:
                     existing.sender = item['sender']
                     existing.sender_email = item['sender_email']
                     existing.subject = item['subject']
                     existing.body = item['body']
-                    if existing.folder not in PRESERVE_FOLDERS:
-                        existing.folder = folder
-                    existing.category = category
-                    existing.confidence = confidence
+                    existing.folder = folder
+                    if category:
+                        existing.category = category
+                    if confidence:
+                        existing.confidence = confidence
                     existing.is_read = item['is_read']
                     existing.is_starred = item['is_starred']
                     existing.is_important = item.get('is_important', False)
                     existing.date = item['date']
-                    if item.get('gmail_message_id'):
-                        existing.gmail_message_id = item['gmail_message_id']
+                    if gmail_msg_id:
+                        existing.gmail_message_id = gmail_msg_id
                 else:
                     email = Email(
                         user_id=user_id,
                         message_id=msg_id,
-                        gmail_message_id=item.get('gmail_message_id'),
+                        gmail_message_id=gmail_msg_id,
                         sender=item['sender'],
                         sender_email=item['sender_email'],
                         recipient=item.get('recipient', 'me'),
@@ -113,6 +113,10 @@ def seed_emails_from_data(user_id, email_data, source="simulation"):
                         date=item['date']
                     )
                     emails_to_add.append(email)
+                    if msg_id:
+                        existing_emails[msg_id] = email
+                    if gmail_msg_id:
+                        existing_emails[gmail_msg_id] = email
                 count += 1
 
             if emails_to_add:
@@ -205,47 +209,45 @@ def get_emails(current_user):
     
     query = Email.query.filter_by(user_id=current_user.id)
     now = datetime.utcnow()
-    
+
+    # --- STEP 1: Apply folder filter ---
     if folder == 'trash':
-        # TRASH FOLDER: Strictly filter emails in trash
         query = query.filter(Email.folder == 'trash')
     elif folder == 'starred':
-        # STARRED FOLDER: Starred emails that are NOT deleted/in trash/snoozed
         query = query.filter(
             Email.is_starred == True,
             Email.folder != 'trash',
             (Email.snoozed_until == None) | (Email.snoozed_until <= now)
         )
     elif folder == 'important':
-        # IMPORTANT FOLDER: Gmail Important-labeled emails not in trash/snoozed
         query = query.filter(
             Email.is_important == True,
             Email.folder != 'trash',
             (Email.snoozed_until == None) | (Email.snoozed_until <= now)
         )
     elif folder == 'snoozed':
-        # SNOOZED FOLDER: Emails with a future snoozed_until timestamp
         query = query.filter(
             Email.snoozed_until != None,
             Email.snoozed_until > now,
             Email.folder != 'trash'
         )
     elif folder == 'all':
-        # ALL ACTIVE EMAILS: Exclude trash and currently snoozed
+        # ALL: Exclude trash and currently snoozed
         query = query.filter(
             Email.folder != 'trash',
             (Email.snoozed_until == None) | (Email.snoozed_until <= now)
         )
     else:
-        # SPECIFIC ACTIVE FOLDER (inbox, sent, drafts, spam): Exclude trash & snoozed
+        # Specific folder: inbox, sent, drafts, spam — strict match
         query = query.filter(
             Email.folder == folder,
             (Email.snoozed_until == None) | (Email.snoozed_until <= now)
         )
-        
+
+    # --- STEP 2: Apply category filter ON TOP of folder (never replace it) ---
     if category and category != 'All':
-        query = query.filter(Email.category.ilike(category))
-        
+        query = query.filter(Email.category.ilike(category.strip()))
+
     if search_query:
         sq = f"%{search_query}%"
         query = query.filter(
@@ -278,6 +280,16 @@ def get_email_detail(current_user, email_id):
     if not email.is_read:
         email.is_read = True
         db.session.commit()
+        tokens = current_user.google_tokens if current_user.google_tokens else None
+        msg_id = email.gmail_message_id or (email.message_id if email.message_id and not email.message_id.startswith(('sent_', 'draft_', 'sim_', 'msg_init_')) else None)
+        if tokens and msg_id:
+            # Sync label in background thread without blocking the user
+            def _async_mark_read(t, m):
+                try:
+                    GmailService.modify_live_gmail_message_labels(t, m, remove_labels=['UNREAD'])
+                except Exception as e:
+                    print(f"[Email Read Sync Warning] {e}")
+            threading.Thread(target=_async_mark_read, args=(tokens, msg_id), daemon=True).start()
         
     return jsonify({'email': email.to_dict()}), 200
 
@@ -290,48 +302,62 @@ def update_email(current_user, email_id):
         
     data = request.get_json() or {}
     tokens = current_user.google_tokens if current_user.google_tokens else None
-    # Use gmail_message_id if available for API calls, fallback to message_id
     msg_id = email.gmail_message_id or (email.message_id if email.message_id and not email.message_id.startswith(('sent_', 'draft_', 'sim_', 'msg_init_')) else None)
+
+    gmail_tasks = []
 
     if 'is_read' in data:
         email.is_read = data['is_read']
         if tokens and msg_id:
             if email.is_read:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['UNREAD'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'remove_labels': ['UNREAD']}))
             else:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['UNREAD'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'add_labels': ['UNREAD']}))
 
     if 'is_starred' in data:
         email.is_starred = data['is_starred']
         if tokens and msg_id:
             if email.is_starred:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['STARRED'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'add_labels': ['STARRED']}))
             else:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['STARRED'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'remove_labels': ['STARRED']}))
 
     if 'is_important' in data:
         email.is_important = data['is_important']
         if tokens and msg_id:
             if email.is_important:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['IMPORTANT'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'add_labels': ['IMPORTANT']}))
             else:
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, remove_labels=['IMPORTANT'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'remove_labels': ['IMPORTANT']}))
 
     if 'folder' in data:
         old_folder = email.folder
         email.folder = data['folder']
         if tokens and msg_id:
             if email.folder == 'trash':
-                GmailService.trash_live_gmail_message(tokens, msg_id)
+                gmail_tasks.append((GmailService.trash_live_gmail_message, (tokens, msg_id), {}))
             elif email.folder == 'inbox' and old_folder == 'trash':
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['INBOX'], remove_labels=['TRASH'])
+                gmail_tasks.append((GmailService.untrash_live_gmail_message, (tokens, msg_id), {}))
             elif email.folder == 'spam':
-                GmailService.modify_live_gmail_message_labels(tokens, msg_id, add_labels=['SPAM'], remove_labels=['INBOX'])
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'add_labels': ['SPAM'], 'remove_labels': ['INBOX']}))
+            elif email.folder == 'inbox' and old_folder == 'spam':
+                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, (tokens, msg_id), {'add_labels': ['INBOX'], 'remove_labels': ['SPAM']}))
 
     if 'category' in data:
         email.category = data['category']
         
     db.session.commit()
+
+    # Fire Gmail sync tasks in non-blocking background thread
+    if gmail_tasks:
+        def _async_gmail_tasks(tasks):
+            for fn, args, kwargs in tasks:
+                try:
+                    fn(*args, **kwargs)
+                except Exception as err:
+                    print(f"[Async Gmail Task Warning] {err}")
+        threading.Thread(target=_async_gmail_tasks, args=(gmail_tasks,), daemon=True).start()
+
     return jsonify({'message': 'Email updated successfully.', 'email': email.to_dict()}), 200
 
 @email_bp.route('/<int:email_id>/snooze', methods=['PATCH'])
@@ -482,7 +508,7 @@ def bulk_email_action(current_user):
             email.folder = 'inbox'
             email.snoozed_until = None
             if tokens and msg_id:
-                gmail_tasks.append((GmailService.modify_live_gmail_message_labels, tokens, msg_id, ['INBOX'], ['TRASH']))
+                gmail_tasks.append((GmailService.untrash_live_gmail_message, tokens, msg_id))
         elif action == 'delete_permanent':
             if tokens and msg_id:
                 gmail_tasks.append((GmailService.delete_live_gmail_message, tokens, msg_id))

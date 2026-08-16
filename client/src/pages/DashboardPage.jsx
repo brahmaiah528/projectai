@@ -32,19 +32,26 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
   const [stats, setStats] = useState(null);
   const [activeEmail, setActiveEmail] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchDashboardStats();
   }, []);
 
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = async (silent = false) => {
+    if (silent) setIsBgRefresh(true);
+    setError('');
     try {
       const res = await API.get('/analytics/dashboard');
-      setStats(res.data);
+      if (res.data) {
+        setStats(res.data);
+      }
     } catch (err) {
       console.error("Failed to load dashboard stats:", err);
+      setError(err.response?.data?.message || 'Unable to connect to analytics server. Please refresh.');
     } finally {
       setIsLoading(false);
+      setIsBgRefresh(false);
     }
   };
 
@@ -105,13 +112,63 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
     }
   };
 
+  // Skeleton card component shown while data loads
+  const SkeletonCard = () => (
+    <div className="glass-card p-5 animate-pulse">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-800" />
+      </div>
+      <div className="h-7 w-16 rounded bg-slate-200 dark:bg-slate-800" />
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
-          <p className="text-sm font-medium text-slate-500">Loading AI Dashboard Analytics...</p>
+      <div className="space-y-6">
+        {/* Header skeleton */}
+        <div className="glass-card p-6 animate-pulse">
+          <div className="h-6 w-48 rounded bg-slate-200 dark:bg-slate-800 mb-2" />
+          <div className="h-4 w-72 rounded bg-slate-200 dark:bg-slate-800" />
         </div>
+        {/* Stat cards skeleton */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {Array.from({length: 8}).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        {/* Chart skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="glass-card p-6 animate-pulse">
+            <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-800 mb-4" />
+            <div className="h-52 rounded-xl bg-slate-100 dark:bg-slate-900" />
+          </div>
+          <div className="glass-card p-6 animate-pulse">
+            <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-800 mb-4" />
+            <div className="h-52 rounded-xl bg-slate-100 dark:bg-slate-900" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoading && !stats) {
+    return (
+      <div className="glass-card p-12 text-center space-y-4">
+        <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto" />
+        <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+          {error || 'Unable to load dashboard data'}
+        </h3>
+        <p className="text-xs text-slate-400 max-w-sm mx-auto">
+          Please check your connection and try reloading the analytics.
+        </p>
+        <button
+          onClick={() => {
+            setIsLoading(true);
+            fetchDashboardStats();
+          }}
+          className="px-5 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-500 transition-colors shadow-md shadow-blue-500/20"
+        >
+          Try Again
+        </button>
       </div>
     );
   }
@@ -149,13 +206,22 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
           </p>
         </div>
 
-        <button
-          onClick={fetchDashboardStats}
-          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 rounded-xl transition-all shadow-sm"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>Refresh Analytics</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/inbox')}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-md shadow-blue-500/20"
+          >
+            <Mail className="w-4 h-4" />
+            <span>Open Full Inbox</span>
+          </button>
+          <button
+            onClick={fetchDashboardStats}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 rounded-xl transition-all shadow-sm"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Clickable Category Summary Cards */}
@@ -201,8 +267,8 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
             <span className="text-[11px] text-slate-400 font-mono">{pieData.length} active classes</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={200}>
               <PieChart>
                 <Pie
                   data={pieData}
@@ -255,8 +321,8 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
             <span className="text-[11px] text-slate-400 font-mono">Daily volume</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={200}>
               <BarChart data={dailyStats}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                 <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} />
@@ -290,37 +356,49 @@ export default function DashboardPage({ setActiveCategory, setActiveFolder }) {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100/60 dark:bg-slate-900/60 uppercase text-[10px] font-bold text-slate-400">
-              <tr>
-                <th className="py-2.5 px-4">Sender</th>
-                <th className="py-2.5 px-4">Subject</th>
-                <th className="py-2.5 px-4">Category</th>
-                <th className="py-2.5 px-4">Confidence</th>
-                <th className="py-2.5 px-4">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
-              {stats?.recent_emails?.map((e) => (
-                <tr 
-                  key={e.id} 
-                  onClick={() => handleOpenEmail(e)}
-                  className="hover:bg-slate-50/50 dark:hover:bg-slate-900/40 cursor-pointer transition-colors"
-                >
-                  <td className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100">{e.sender}</td>
-                  <td className="py-3 px-4 max-w-xs truncate font-medium">{e.subject}</td>
-                  <td className="py-3 px-4 flex items-center gap-2">
-                    <CategoryBadge category={e.category} size="xs" />
-                    {e.priority_highlight && <PriorityActionBadge highlight={e.priority_highlight} size="xs" />}
-                  </td>
-                  <td className="py-3 px-4 font-bold text-blue-600 dark:text-blue-400">{e.confidence}%</td>
-                  <td className="py-3 px-4 text-slate-400">{new Date(e.date).toLocaleDateString()}</td>
+        {stats?.recent_emails && stats.recent_emails.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100/60 dark:bg-slate-900/60 uppercase text-[10px] font-bold text-slate-400">
+                <tr>
+                  <th className="py-2.5 px-4">Sender</th>
+                  <th className="py-2.5 px-4">Subject</th>
+                  <th className="py-2.5 px-4">Category</th>
+                  <th className="py-2.5 px-4">Confidence</th>
+                  <th className="py-2.5 px-4">Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
+                {stats.recent_emails.map((e) => (
+                  <tr 
+                    key={e.id} 
+                    onClick={() => handleOpenEmail(e)}
+                    className="hover:bg-slate-50/50 dark:hover:bg-slate-900/40 cursor-pointer transition-colors"
+                  >
+                    <td className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100">{e.sender}</td>
+                    <td className="py-3 px-4 max-w-xs truncate font-medium">{e.subject}</td>
+                    <td className="py-3 px-4 flex items-center gap-2">
+                      <CategoryBadge category={e.category} size="xs" />
+                      {e.priority_highlight && <PriorityActionBadge highlight={e.priority_highlight} size="xs" />}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-blue-600 dark:text-blue-400">{e.confidence}%</td>
+                    <td className="py-3 px-4 text-slate-400">{new Date(e.date).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-8 text-center space-y-2">
+            <p className="text-xs text-slate-400">Click below to open your full inbox or browse by category.</p>
+            <button
+              onClick={() => navigate('/inbox')}
+              className="px-4 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors"
+            >
+              Open Full Inbox &rarr;
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Modal reader when a recent email row is clicked on dashboard */}

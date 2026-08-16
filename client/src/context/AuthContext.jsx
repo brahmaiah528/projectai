@@ -11,60 +11,55 @@ export const AuthProvider = ({ children }) => {
     } catch { return null; }
   });
   const [token, setToken] = useState(() => localStorage.getItem('token') || null);
-  const [isLoading, setIsLoading] = useState(true);
+  // If we already have both token and user cached, skip the loading state entirely
+  const [isLoading, setIsLoading] = useState(() => {
+    const hasToken = !!localStorage.getItem('token');
+    const hasUser = !!localStorage.getItem('user');
+    // If both are cached we can render immediately, no need to show loading
+    return hasToken && !hasUser; // only show loading if token exists but no user yet
+  });
   const verifyAttempts = useRef(0);
 
+  // Run verification ONCE on mount only — never on subsequent state changes
+  // This prevents re-verification (and potential logout) when switching categories etc.
   useEffect(() => {
     const verifyUser = async () => {
-      if (token) {
-        // If we already have user data in state/localStorage, skip network call
-        if (user) {
-          setIsLoading(false);
-          return;
-        }
-        // Retry up to 3 times — handles Render cold starts (first request can be slow)
-        let lastErr = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const res = await API.get('/auth/me');
-            setUser(res.data.user);
-            localStorage.setItem('user', JSON.stringify(res.data.user));
-            verifyAttempts.current = 0;
-            setIsLoading(false);
-            return;
-          } catch (err) {
-            lastErr = err;
-            const status = err?.response?.status;
-            // Only logout on explicit 401 with an auth-failure message (not network errors)
-            if (status === 401 && err?.response?.data?.message) {
-              const msg = err.response.data.message.toLowerCase();
-              // Only clear session if server explicitly says token is invalid/expired
-              // Do NOT logout on "user not found" — that's a DB wipe, auto-healing handles it
-              if (msg.includes('token has expired') || msg.includes('invalid token')) {
-                console.warn('[Auth] Token expired — clearing session.');
-                _clearSession();
-                setIsLoading(false);
-                return;
-              }
-            }
-            // For network errors, 500s, or "user not found" — wait and retry
-            if (attempt < 2) {
-              await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
-            }
+      const savedToken = localStorage.getItem('token');
+      const savedUser = localStorage.getItem('user');
+
+      // Both cached — render immediately, no network call needed
+      if (savedToken && savedUser) {
+        try {
+          if (!user) setUser(JSON.parse(savedUser));
+        } catch {}
+        setIsLoading(false);
+        return;
+      }
+
+      if (savedToken && !savedUser) {
+        // Have token but no user data — verify with server once
+        try {
+          const res = await API.get('/auth/me');
+          setUser(res.data.user);
+          localStorage.setItem('user', JSON.stringify(res.data.user));
+        } catch (err) {
+          const status = err?.response?.status;
+          const msg = (err?.response?.data?.message || '').toLowerCase();
+          // Only clear session on explicit token invalid/expired
+          if (status === 401 && (msg.includes('token has expired') || msg.includes('invalid token'))) {
+            console.warn('[Auth] Token expired on startup — clearing session.');
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            setToken(null);
+            setUser(null);
           }
-        }
-        // After 3 retries — keep user logged in with cached data, just warn
-        console.warn('[Auth] Could not verify session after 3 attempts. Using cached user data.', lastErr?.message);
-        // Use cached user data from localStorage if available — don't kick user out
-        const cached = localStorage.getItem('user');
-        if (cached) {
-          try { setUser(JSON.parse(cached)); } catch {}
+          // Otherwise keep the user logged in — network errors are temporary
         }
       }
       setIsLoading(false);
     };
     verifyUser();
-  }, [token]);
+  }, []); // empty deps — only run once on mount, never on token/state changes
 
   const _clearSession = () => {
     setToken(null);
@@ -76,10 +71,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password, rememberMe) => {
     const res = await API.post('/auth/login', { email, password, remember_me: rememberMe });
     const { token: jwtToken, user: userData } = res.data;
-    setToken(jwtToken);
-    setUser(userData);
+    // Update state + localStorage first
     localStorage.setItem('token', jwtToken);
     localStorage.setItem('user', JSON.stringify(userData));
+    setToken(jwtToken);
+    setUser(userData);
+    // Ensure isLoading is false so ProtectedRoute doesn't redirect back to login
+    setIsLoading(false);
     return res.data;
   };
 
@@ -99,21 +97,21 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     const res = await API.post('/auth/register', { name, email, password });
     const { token: jwtToken, user: userData } = res.data;
-    setToken(jwtToken);
-    setUser(userData);
     localStorage.setItem('token', jwtToken);
     localStorage.setItem('user', JSON.stringify(userData));
+    setToken(jwtToken);
+    setUser(userData);
+    setIsLoading(false);
     return res.data;
   };
 
-  const logout = async () => {
-    // Call backend to clear server-side session cache
-    try {
-      await API.post('/auth/logout');
-    } catch {
-      // Ignore errors — still clear client-side session
-    }
+  const logout = () => {
+    // 1. Instantly wipe local session credentials
     _clearSession();
+    // 2. Fire non-blocking logout notification to backend
+    API.post('/auth/logout').catch(() => {});
+    // 3. Hard redirect to /login to ensure clean state
+    window.location.href = '/login';
   };
 
   const updateProfile = (updatedUser) => {
